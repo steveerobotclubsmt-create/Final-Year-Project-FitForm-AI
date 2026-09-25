@@ -1,0 +1,6 @@
+mediapipe==0.10.21
+opencv-python==4.11.0.86
+numpy<2
+flask>=3.0
+gpiozero; platform_machine == "aarch64"
+lgpio; platform_machine == "aarch64"

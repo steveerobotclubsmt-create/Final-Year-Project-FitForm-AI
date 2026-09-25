@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+fitform_env/
+cnn_env/
+
+# Session data (personal exercise logs)
+logs/*.csv
+
+# Editor / OS
+.vscode/
+tempCodeRunnerFile*
+.DS_Store
+Thumbs.db
