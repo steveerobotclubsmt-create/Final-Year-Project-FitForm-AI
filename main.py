@@ -3,6 +3,7 @@
 Examples:
   python main.py                      # default webcam (index 0)
   python main.py --camera 1           # a different camera
+  python main.py --camera picam       # Raspberry Pi Camera Module (via rpicam-vid)
   python main.py --video test.mp4     # run on a recorded video instead of a camera
   python main.py --weight 65          # set body weight for the calorie estimate
 """
@@ -25,7 +26,8 @@ from fitform.session_summary import build_summary, print_summary
 
 def parse_args():
     p = argparse.ArgumentParser(description="FitForm AI - bicep curl trainer")
-    p.add_argument("--camera", type=int, default=config.CAMERA_INDEX, help="camera index (default 0)")
+    p.add_argument("--camera", default=str(config.CAMERA_INDEX),
+                   help="camera index (0, 1, ...) or 'picam' for the Pi Camera Module (default 0)")
     p.add_argument("--video", help="video file to use instead of a camera")
     p.add_argument("--weight", type=float, default=config.USER_WEIGHT_KG, help="body weight in kg")
     p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
@@ -38,10 +40,16 @@ def main():
     args = parse_args()
     W, H = config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT
 
-    source = args.video if args.video else args.camera
+    if args.video:
+        source = args.video
+    elif args.camera.lower() == "picam":
+        source = "picam"
+    else:
+        source = int(args.camera)
     stream = CameraStream(source, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT)
     if not stream.is_opened():
-        print(f"ERROR: could not open {source!r}. Try another camera with --camera 1")
+        print(f"ERROR: could not open {source!r}. Try another camera with --camera 1 "
+              "(or --camera picam for the Pi Camera Module; check it with: rpicam-hello --list-cameras)")
         return
     stream.start()
 

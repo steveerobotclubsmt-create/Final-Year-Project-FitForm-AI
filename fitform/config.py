@@ -2,6 +2,7 @@
 
 # ---- Camera ----
 CAMERA_INDEX = 0            # 0 = default webcam; try 1 if the wrong camera opens
+                            # on the Pi, run with --camera picam to use the Pi Camera Module 2
 CAPTURE_WIDTH = 1280
 CAPTURE_HEIGHT = 720
 DISPLAY_WIDTH = 960          # each camera view is resized to this before display

@@ -50,11 +50,23 @@ pip install -r requirements.txt
 ```
 Keep the virtual environment outside OneDrive. Syncing thousands of package files slows everything down.
 
-### Raspberry Pi 5 (Raspberry Pi OS 64-bit)
+### Raspberry Pi 5 (Raspberry Pi OS Trixie, 64-bit)
+Trixie ships Python 3.13, but the MediaPipe Pose API used here (`mediapipe==0.10.18`) only has Pi (aarch64) builds for Python 3.11/3.12. So FitForm gets its own Python 3.12 environment, installed with `uv`, next to the system Python.
 ```bash
-python3 -m venv ~/fitform_env
+sudo apt update && sudo apt install -y libportaudio2 rpicam-apps git
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+uv venv --python 3.12 ~/fitform_env
 source ~/fitform_env/bin/activate
-pip install -r requirements.txt
+cd ~/Final-Year-Project-FitForm-AI
+uv pip install -r requirements.txt
+```
+The Pi Camera Module is read through the `rpicam-vid` command (`--camera picam`), so Picamera2 is not needed inside the environment. A USB webcam uses `--camera 0`.
+
+Check the install:
+```bash
+python -c "import mediapipe as mp, cv2; mp.solutions.pose.Pose(); print('MediaPipe', mp.__version__, 'OpenCV', cv2.__version__)"
+rpicam-hello --list-cameras     # Pi Camera Module detected?
 ```
 
 ## Usage
@@ -62,6 +74,7 @@ Run from the project folder:
 ```bash
 python main.py                    # default webcam
 python main.py --camera 1         # use a different camera
+python main.py --camera picam     # Raspberry Pi Camera Module 2 (on the Pi)
 python main.py --weight 65        # your body weight in kg for calories
 python main.py --video clip.mp4   # test on a recorded video
 python main.py --no-gpio --no-server
