@@ -147,6 +147,31 @@ def test_3d_measurements():
     assert meas["elbow"] == 90.0 and meas["wrist"] == 180.0
 
 
+def test_engine_fist_rep_counts_with_knuckle_wrist():
+    """Whole pipeline: pose points + MediaPipe Hands knuckle; a clean fist curl must count."""
+    from fitform.feedback_engine import FeedbackEngine
+    W, H = 960, 540
+
+    class Pose:
+        def __init__(self, elbow_deg):
+            pts = arm(elbow_deg)
+            self.landmark = [P(0.5, 0.5, 0, 0.0) for _ in range(33)]
+            for j, i in (("shoulder", 12), ("elbow", 14), ("wrist", 16), ("index", 20)):
+                x, y = pts[j]
+                self.landmark[i] = P((W - x) / W, y / H, 0, 0.99)   # un-mirror like the real pipeline
+            ex, ey = (W - pts["elbow"][0]), pts["elbow"][1]
+            wx, wy = (W - pts["wrist"][0]), pts["wrist"][1]
+            self.knuckle = ((wx, wy), (wx + (wx - ex) * 0.3, wy + (wy - ey) * 0.3))   # in line with forearm
+
+    fe = FeedbackEngine()
+    events = []
+    for t, e in enumerate((170, 165, 130, 100, 70, 40)):
+        pose = Pose(e)
+        ev, _ = fe.update(pose, W, H, t * 0.2, world=None, hands={"right": "fist"}, hand_points={"right": pose.knuckle})
+        events += ev
+    assert ("right", "counted") in events, events
+
+
 # ---------- calories + logging ----------
 def test_calories():
     t = CalorieTracker(weight_kg=70, met=3.5)

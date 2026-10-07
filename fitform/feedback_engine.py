@@ -2,7 +2,7 @@
 feedback to show."""
 
 from . import config
-from .bicep_curl import ARMS, BicepCurlCounter, arm_points, measure_from_points, measure_from_world
+from .bicep_curl import ARMS, BicepCurlCounter, arm_points, get_angle, measure_from_points, measure_from_world
 
 RED = (0, 0, 255)
 ORANGE = (0, 165, 255)
@@ -16,12 +16,14 @@ class FeedbackEngine:
         self.message = "Show your full arm to the camera"
         self.message_color = GREY
 
-    def update(self, landmarks, width, height, now, world=None, hands=None):
+    def update(self, landmarks, width, height, now, world=None, hands=None, hand_points=None):
         """landmarks: MediaPipe pose_landmarks for this frame (None if nobody detected).
         world: MediaPipe pose_world_landmarks (3D) or None. hands: {'right': state, 'left': state} or None.
+        hand_points: {'right': (wrist_px, knuckle_px), ...} from MediaPipe Hands (un-mirrored pixels) or None.
         Returns (events, drawn): events = [(arm, 'counted'|'rejected')], drawn = {arm: points}."""
         events, drawn = [], {}
         hands = hands or {}
+        hand_points = hand_points or {}
         partly_visible = False
         if landmarks is not None:
             for arm in ARMS:
@@ -36,6 +38,15 @@ class FeedbackEngine:
                     meas = measure_from_world(world.landmark, arm)
                 else:
                     meas = measure_from_points(pts)
+                # Wrist straightness: forearm vs the middle knuckle from MediaPipe Hands. The pose model's
+                # "index" point folds into the palm when you make a fist, so it is not used for this.
+                hp = hand_points.get(arm)
+                if hp is not None:
+                    lm = landmarks.landmark
+                    e = ARMS[arm]["elbow"]
+                    meas["wrist"] = get_angle((lm[e].x * width, lm[e].y * height), hp[0], hp[1])
+                else:
+                    meas["wrist"] = None
                 event = self.counters[arm].update(meas, now, hands.get(arm))
                 if event:
                     events.append((arm, event))

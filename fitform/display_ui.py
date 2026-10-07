@@ -22,6 +22,24 @@ def draw_arm(image, pts, counter):
 
 
 
+def draw_debug(image, feedback):
+    """Live numbers for tuning thresholds (run with --debug)."""
+    h, w = image.shape[:2]
+    y = 200
+    for arm in ("right", "left"):
+        c = feedback.counters[arm]
+        d = c.last
+        if not d:
+            continue
+        def fmt(v):
+            return "-" if v is None else f"{v:.0f}"
+        txt = (f"{arm[0].upper()}: elbow {fmt(d.get('elbow_angle'))}  drift {fmt(d.get('drift'))}  "
+               f"wrist {fmt(d.get('wrist_angle'))}  hand {d.get('hand') or '-'}  stage {c.stage or '-'}")
+        cv2.rectangle(image, (0, y - 20), (w, y + 6), (0, 0, 0), -1)
+        cv2.putText(image, txt, (8, y), FONT, 0.55, YELLOW, 1)
+        y += 28
+
+
 def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
     h, w = image.shape[:2]
     for arm, x, label, label_color in (

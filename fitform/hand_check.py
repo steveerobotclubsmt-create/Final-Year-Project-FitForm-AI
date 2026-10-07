@@ -24,6 +24,7 @@ class HandChecker:
         self.every_n = max(1, every_n)
         self._frame = 0
         self.states = {"right": None, "left": None}
+        self.points = {"right": None, "left": None}   # (wrist, middle knuckle) pixel points, un-mirrored
         self.hand_landmarks = []
 
     def process(self, frame_bgr, pose_landmarks):
@@ -38,6 +39,7 @@ class HandChecker:
         result = self.hands.process(rgb)
         self.hand_landmarks = result.multi_hand_landmarks or []
         states = {"right": None, "left": None}
+        points = {"right": None, "left": None}
         if pose_landmarks is not None and self.hand_landmarks:
             lm = pose_landmarks.landmark
             for arm, wi in POSE_WRIST.items():
@@ -51,7 +53,10 @@ class HandChecker:
                         best, best_d = hand, d
                 if best is not None and best_d < config.HAND_MATCH_DIST * w:
                     states[arm] = classify_hand(best.landmark, w, h)
+                    b = best.landmark
+                    points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
         self.states = states
+        self.points = points
         return states
 
     def close(self):

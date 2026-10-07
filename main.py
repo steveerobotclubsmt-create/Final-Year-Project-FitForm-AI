@@ -16,7 +16,7 @@ import cv2
 from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
-from fitform.display_ui import draw_arm, draw_hud
+from fitform.display_ui import draw_arm, draw_debug, draw_hud
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
@@ -35,6 +35,7 @@ def parse_args():
     p.add_argument("--no-server", action="store_true", help="disable the Flask web server")
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
     p.add_argument("--no-fist", action="store_true", help="turn off the clenched-fist check")
+    p.add_argument("--debug", action="store_true", help="show live angles on screen and print them for tuning")
     return p.parse_args()
 
 
@@ -68,6 +69,7 @@ def main():
 
     print("Starting... Press Q to quit, R to reset")
     last_id = -1
+    last_dbg = 0.0
     fps, fps_t, fps_n = 0.0, time.time(), 0
 
     try:
@@ -84,7 +86,15 @@ def main():
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
 
             hand_states = hands.process(frame, landmarks) if hands else None
-            events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states)
+            events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
+                                            hand_points=hands.points if hands else None)
+            if args.debug and now - last_dbg >= 0.5:
+                last_dbg = now
+                for arm in drawn:
+                    c = feedback.counters[arm]; d = c.last
+                    fmt = lambda v: "-" if v is None else f"{v:.0f}"
+                    print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} drift {fmt(d['drift'])} "
+                          f"wrist {fmt(d['wrist_angle'])} hand {d['hand'] or '-'} stage {c.stage or '-'} form_ok {c.form_ok}")
             for arm, event in events:
                 if event == "counted":
                     calories.on_rep(now)
@@ -105,6 +115,8 @@ def main():
                 for arm, pts in drawn.items():
                     draw_arm(image, pts, feedback.counters[arm])
                 draw_hud(image, feedback, calories.calories(now), calories.active_seconds(now), fps)
+                if args.debug:
+                    draw_debug(image, feedback)
                 cv2.imshow("FitForm AI - Bicep Curl", image)
 
                 key = cv2.waitKey(1) & 0xFF

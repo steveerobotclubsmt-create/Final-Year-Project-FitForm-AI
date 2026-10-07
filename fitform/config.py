@@ -15,11 +15,11 @@ MODEL_COMPLEXITY = 1         # 0 = fastest (good for Pi 5), 1 = balanced, 2 = mo
 LANDMARK_VISIBILITY_MIN = 0.6
 
 # ---- Bicep curl thresholds (degrees) ----
-DOWN_ANGLE = 155             # elbow angle above this = arm extended (bottom of rep)
-UP_ANGLE = 50                # elbow angle below this = arm curled (top of rep)
-EXTENSION_MIN_ANGLE = 145    # when "down", elbow must stay above this
+DOWN_ANGLE = 145             # elbow angle above this = arm extended (bottom of rep); a straight arm reads ~150-160
+UP_ANGLE = 60                # elbow angle below this = arm curled (top of rep)
+EXTENSION_MIN_ANGLE = 140    # hint 'Extend arm fully!' when lowering stops short of this
 UPPER_ARM_DRIFT_MAX = 25     # upper arm may move this many degrees from its start position before 'elbow moved'
-WRIST_STRAIGHT_MIN = 150     # elbow-wrist-index angle below this = wrist bent
+WRIST_STRAIGHT_MIN = 145     # elbow-wrist-knuckle angle below this = wrist bent (needs the hand to be seen)
 SMOOTHING_ALPHA = 0.6        # 1.0 = no smoothing; lower = smoother but slower to react
 USE_3D_ANGLES = True         # use MediaPipe 3D world landmarks (works from the front or the side)
 
