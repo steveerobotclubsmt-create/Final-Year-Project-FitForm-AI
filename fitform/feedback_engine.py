@@ -1,7 +1,8 @@
 """Runs the rep counters on the pose seen by the camera and decides what
 feedback to show."""
 
-from .bicep_curl import ARMS, BicepCurlCounter, arm_points, measure_from_points
+from . import config
+from .bicep_curl import ARMS, BicepCurlCounter, arm_points, measure_from_points, measure_from_world
 
 RED = (0, 0, 255)
 ORANGE = (0, 165, 255)
@@ -15,31 +16,45 @@ class FeedbackEngine:
         self.message = "Show your full arm to the camera"
         self.message_color = GREY
 
-    def update(self, landmarks, width, height, now):
+    def update(self, landmarks, width, height, now, world=None, hands=None):
         """landmarks: MediaPipe pose_landmarks for this frame (None if nobody detected).
-        Returns (events, drawn): events = [(arm, 'counted'|'rejected')],
-        drawn = {arm: points} for drawing joints."""
+        world: MediaPipe pose_world_landmarks (3D) or None. hands: {'right': state, 'left': state} or None.
+        Returns (events, drawn): events = [(arm, 'counted'|'rejected')], drawn = {arm: points}."""
         events, drawn = [], {}
+        hands = hands or {}
+        partly_visible = False
         if landmarks is not None:
             for arm in ARMS:
                 pts = arm_points(landmarks.landmark, arm, width, height)
                 if pts is None:
+                    idx = ARMS[arm]
+                    lm = landmarks.landmark
+                    if min(lm[idx["shoulder"]].visibility, lm[idx["elbow"]].visibility) > config.LANDMARK_VISIBILITY_MIN:
+                        partly_visible = True     # arm seen but the hand/wrist is out of view
                     continue
-                event = self.counters[arm].update(measure_from_points(pts), now)
+                if world is not None and config.USE_3D_ANGLES:
+                    meas = measure_from_world(world.landmark, arm)
+                else:
+                    meas = measure_from_points(pts)
+                event = self.counters[arm].update(meas, now, hands.get(arm))
                 if event:
                     events.append((arm, event))
                 drawn[arm] = pts
-        self._set_message(list(drawn))
+        self._set_message(list(drawn), partly_visible)
         return events, drawn
 
-    def _set_message(self, seen_arms):
+    def _set_message(self, seen_arms, partly_visible=False):
         if not seen_arms:
-            self.message, self.message_color = "Show your full arm to the camera", GREY
+            if partly_visible:
+                self.message, self.message_color = "Step back - keep your hands in view", ORANGE
+            else:
+                self.message, self.message_color = "Show your full arm to the camera", GREY
             return
         # Report the most urgent problem on any visible arm.
         for check, text, color in (
             ("elbow_swinging", "Keep elbow still!", RED),
             ("wrist_bent", "Straighten your wrist!", RED),
+            ("palm_open", "Clench your fist!", RED),
             ("not_extended", "Extend arm fully!", ORANGE),
         ):
             for arm in seen_arms:

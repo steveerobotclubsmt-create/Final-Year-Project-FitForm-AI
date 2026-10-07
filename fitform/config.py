@@ -18,9 +18,19 @@ LANDMARK_VISIBILITY_MIN = 0.6
 DOWN_ANGLE = 155             # elbow angle above this = arm extended (bottom of rep)
 UP_ANGLE = 50                # elbow angle below this = arm curled (top of rep)
 EXTENSION_MIN_ANGLE = 145    # when "down", elbow must stay above this
-TORSO_SWING_MAX = 35         # elbow-shoulder-hip angle above this = elbow swinging
+UPPER_ARM_DRIFT_MAX = 25     # upper arm may move this many degrees from its start position before 'elbow moved'
 WRIST_STRAIGHT_MIN = 150     # elbow-wrist-index angle below this = wrist bent
 SMOOTHING_ALPHA = 0.6        # 1.0 = no smoothing; lower = smoother but slower to react
+USE_3D_ANGLES = True         # use MediaPipe 3D world landmarks (works from the front or the side)
+
+# ---- Hand / fist check (MediaPipe Hands) ----
+FIST_CHECK = True            # a rep only counts if the hand is a fist (holding the dumbbell)
+FIST_STRICT = False          # False: a hand that can't be seen (hidden by the dumbbell) is not penalised
+OPEN_PALM_MIN_FRAMES = 2     # open palm must be seen in at least this many checked frames to reject a rep
+HAND_EVERY_N = 2             # run hand detection every N frames (higher = faster FPS on the Pi)
+HAND_MODEL_COMPLEXITY = 0    # 0 = fastest
+HAND_MIN_CONFIDENCE = 0.5
+HAND_MATCH_DIST = 0.12       # hand must be within this fraction of the frame width of the pose wrist
 
 
 # ---- Calories ----

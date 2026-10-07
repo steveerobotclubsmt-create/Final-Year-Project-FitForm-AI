@@ -19,6 +19,7 @@ from fitform.camera_thread import CameraStream
 from fitform.display_ui import draw_arm, draw_hud
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
+from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
 from fitform.session_logger import SessionLogger, start_server
 from fitform.session_summary import build_summary, print_summary
@@ -33,6 +34,7 @@ def parse_args():
     p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
     p.add_argument("--no-server", action="store_true", help="disable the Flask web server")
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
+    p.add_argument("--no-fist", action="store_true", help="turn off the clenched-fist check")
     return p.parse_args()
 
 
@@ -55,6 +57,9 @@ def main():
 
     engine = PoseEngine()
     feedback = FeedbackEngine()
+    if args.no_fist:
+        config.FIST_CHECK = False
+    hands = HandChecker() if config.FIST_CHECK else None
     calories = CalorieTracker(weight_kg=args.weight)
     gpio = GPIOFeedback(enabled=not args.no_gpio and config.GPIO_ENABLED)
     logger = SessionLogger()
@@ -78,14 +83,16 @@ def main():
             landmarks = engine.process(frame)      # detect on the un-mirrored frame
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
 
-            events, drawn = feedback.update(landmarks, W, H, now)
+            hand_states = hands.process(frame, landmarks) if hands else None
+            events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states)
             for arm, event in events:
                 if event == "counted":
                     calories.on_rep(now)
                     gpio.beep()
                     print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted")
                 else:
-                    print(f"x {arm.capitalize()} rep NOT counted - bad form")
+                    why = ", ".join(feedback.counters[arm].last_reasons) or "bad form"
+                    print(f"x {arm.capitalize()} rep NOT counted - {why}")
             gpio.show_form(feedback.overall_form_ok())
 
             fps_n += 1
@@ -117,6 +124,8 @@ def main():
             logger.save(summary)
         stream.stop()
         engine.close()
+        if hands:
+            hands.close()
         gpio.off()
         cv2.destroyAllWindows()
 

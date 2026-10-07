@@ -6,8 +6,10 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 
 ## Features
 - Real-time pose detection (MediaPipe Pose + OpenCV)
-- Strict rep counting per arm: a rep only counts if the elbow stays still and the wrist stays straight, starting from full extension
-- Live feedback: "Keep elbow still!", "Straighten your wrist!", "Extend arm fully!"
+- Strict rep counting per arm: a rep only counts if the upper arm stays where it started, the wrist stays straight and the hand is a clenched fist, starting from full extension
+- 3D joint angles from MediaPipe world landmarks, so it works from the front or the side
+- Fist check with MediaPipe Hands (open palm = rep not counted)
+- Live feedback: "Keep elbow still!", "Straighten your wrist!", "Clench your fist!", "Extend arm fully!", "Step back - keep your hands in view"
 - Single-camera version (a two-camera front + side version is in development)
 - Green/red LED form indicator and buzzer beep on every counted rep (Raspberry Pi GPIO)
 - Calorie estimate (MET x weight x active time; timer starts on the first rep)
@@ -23,6 +25,8 @@ fitform-ai/
 │   ├── camera_thread.py     # background camera capture (no lag / buffering)
 │   ├── pose_engine.py       # MediaPipe Pose wrapper
 │   ├── bicep_curl.py        # joint angles + rep-counting state machine
+│   ├── hand_check.py        # MediaPipe Hands: fist / open palm per arm
+│   ├── hand_state.py        # fist vs open classification (no camera needed)
 │   ├── feedback_engine.py   # runs the rep counters and chooses the feedback text
 │   ├── display_ui.py        # on-screen overlay
 │   ├── gpio_feedback.py     # LEDs + buzzer (auto-disabled on a laptop)
@@ -80,6 +84,13 @@ python main.py --video clip.mp4   # test on a recorded video
 python main.py --no-gpio --no-server
 ```
 Keys: **Q** = quit and save the session, **R** = reset counters.
+
+Extra options: `--no-fist` turns off the clenched-fist check. Thresholds (elbow drift, wrist angle, fist rules) are in `fitform/config.py`.
+
+### Camera set-up for reliable counting
+- Stand (or sit) **2-3 m** from the camera so your **whole upper body, elbows and both hands** stay in view, including when your arm is straight down.
+- Camera at about chest height. Front-on works; about 45 degrees to the side is best for seeing the elbow.
+- Good, even lighting; avoid a bright window behind you.
 
 Session log from another device on the same Wi-Fi:
 - `http://<pi-ip>:5000/sessions` - JSON

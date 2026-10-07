@@ -16,6 +16,7 @@ class PoseEngine:
             min_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
             min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
         )
+        self.world = None   # 3D world landmarks of the last frame (metres, hip-centred)
 
     def process(self, frame_bgr):
         """Runs pose detection on an un-mirrored BGR frame.
@@ -23,6 +24,7 @@ class PoseEngine:
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         rgb.flags.writeable = False
         results = self.pose.process(rgb)
+        self.world = results.pose_world_landmarks
         return results.pose_landmarks
 
     @staticmethod

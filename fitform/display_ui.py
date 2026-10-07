@@ -35,6 +35,9 @@ def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
         cv2.putText(image, counter.stage or "-", (x + 10, 130), FONT, 0.8, (200, 200, 200), 2)
         status, col = ("GOOD", GREEN) if counter.form_ok else ("BAD FORM", RED)
         cv2.putText(image, status, (x + 10, 158), FONT, 0.6, col, 2)
+        hand = {"fist": ("FIST", GREEN), "open": ("OPEN", RED), "partial": ("HAND?", YELLOW)}.get(counter.hand)
+        if hand:
+            cv2.putText(image, hand[0], (x + 105, 130), FONT, 0.6, hand[1], 2)
 
     mins, secs = divmod(int(elapsed_s), 60)
     cv2.putText(image, f"{calories_kcal:.2f} kcal   {mins:02d}:{secs:02d}   {fps:.0f} FPS",
