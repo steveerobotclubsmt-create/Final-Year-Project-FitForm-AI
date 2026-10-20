@@ -88,7 +88,7 @@ class FeedbackEngine:
             ("not_ready", "Hold your arm straight to start", ORANGE),
             ("elbow_swinging", "Keep your elbow still", RED),
             ("hand_open", "Clench your fist", RED),
-            ("palm_away", "Turn your palm to the front", RED),
+            ("palm_away", "Don't turn your hand outward", RED),
             ("wrist_bent", "Keep your wrist straight", RED),
             ("not_extended", "Lower your arm fully", ORANGE),
         ):

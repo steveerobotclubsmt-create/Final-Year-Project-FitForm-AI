@@ -26,7 +26,7 @@ class HandChecker:
         self.states = {"right": None, "left": None}
         self.points = {"right": None, "left": None}   # (wrist, middle knuckle) pixel points, un-mirrored
         self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
-        self.palm_scores = {"right": None, "left": None}   # -1..1, >0 = palm towards the camera
+        self.palm_scores = {"right": None, "left": None}   # (front, inward), each -1..1
         self.hand_landmarks = []
 
     def process(self, frame_bgr, pose_landmarks):
@@ -65,7 +65,9 @@ class HandChecker:
                 b = self.hand_landmarks[k].landmark
                 states[arm] = classify_hand(b, w, h)
                 points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
-                palms[arm], scores[arm] = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE)
+                label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
+                                                      config.PALM_INWARD_SIGN)
+                palms[arm], scores[arm] = label, (front, inward)
         self.states = states
         self.points = points
         self.palms = palms

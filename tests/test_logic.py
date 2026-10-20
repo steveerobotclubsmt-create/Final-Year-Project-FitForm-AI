@@ -250,13 +250,33 @@ def test_palm_forward_rep_counts_even_if_back_seen_at_top():
 
 def test_reverse_grip_rep_rejected():
     ev, c = _palm_rep(["back", "back", "back", "back", "side", "side"])
-    assert ev == "rejected" and c.last_reasons == ["palm not facing forward"]
+    assert ev == "rejected" and c.last_reasons == ["palm turned outward or backward"]
 
 
 def test_hand_turned_outward_rejected():
-    """Hand rotated out to the side: the camera sees the edge of the hand, never the palm."""
-    ev, c = _palm_rep(["side", "side", "side", "side", "side", "side"])
-    assert ev == "rejected" and c.last_reasons == ["palm not facing forward"]
+    ev, c = _palm_rep(["outward", "outward", "outward", "outward", "side", "side"])
+    assert ev == "rejected" and c.last_reasons == ["palm turned outward or backward"]
+
+
+def test_palm_facing_body_at_bottom_counts():
+    """Palms towards the thighs at the start is a normal standard-curl start."""
+    ev, c = _palm_rep(["inward", "inward", "front", "back", "back", "back"])
+    assert ev == "counted"
+
+
+def edge_hand(arm_name, thumb_towards_camera):
+    """Hand hanging down, seen edge-on; index knuckle nearer (z < 0) or further from the camera."""
+    d = -0.03 if thumb_towards_camera else 0.03
+    pts = [P(0.5, 0.5, 0.0) for _ in range(21)]
+    pts[5] = P(0.5, 0.56, d)
+    pts[17] = P(0.5, 0.56, -d)
+    return pts
+
+
+def test_palm_inward_vs_outward_from_depth():
+    for a in ("right", "left"):
+        assert palm_direction(edge_hand(a, True), a)[0] == "inward"      # thumb forward = palm to body
+        assert palm_direction(edge_hand(a, False), a)[0] == "outward"    # thumb back = palm away
 
 
 # ---------- tempo + start position ----------
@@ -325,10 +345,10 @@ def test_palm_turned_out_for_long_during_lift_rejected():
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, palm="front")           # good start ...
-    for t, e in ((0.2, 140), (0.4, 130), (0.6, 120)):   # ... then hand turned out for 0.4 s
-        c.update(m(e), t, palm="side")
+    for t, e in ((0.2, 138), (0.4, 130), (0.6, 120)):   # ... then hand turned out for 0.4 s
+        c.update(m(e), t, palm="outward")
     assert c.update(m(35), 1.0, palm="back") == "rejected"
-    assert c.last_reasons == ["palm not facing forward"]
+    assert c.last_reasons == ["palm turned outward or backward"]
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
@@ -336,7 +356,7 @@ def test_one_bad_palm_reading_is_ignored():
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, palm="front")
-    c.update(m(140), 0.2, palm="side")            # single blip
+    c.update(m(138), 0.2, palm="outward")         # single blip
     c.update(m(125), 0.35, palm="front")
     c.update(m(90), 0.6, palm="back")             # back of hand near the top is normal
     assert c.update(m(35), 0.9, palm="back") == "counted"

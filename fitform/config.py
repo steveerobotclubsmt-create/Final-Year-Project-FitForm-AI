@@ -41,13 +41,14 @@ FAULT_HOLD_SECONDS = 0.3     # during the lift a fault (elbow moved, wrist bent,
 
 # ---- Hand checks (MediaPipe Hands) - strict: the hand must be seen and correct, or the rep is not counted ----
 FIST_CHECK = True            # hand must be a clenched fist (or wrapped round a bottle / dumbbell) during the curl
-PALM_CHECK = True            # standard curl: palm faces the camera at the bottom of the curl
+PALM_CHECK = True            # palm must face forward or towards the body; outward or backward fails
 HAND_WINDOW_BEFORE = 1.0     # the down (start) position: last N seconds with the arm straight before the lift
 HAND_MIN_READINGS = 2        # hand must be seen this many times in the down position, else "hand not visible"
-PALM_FRONT_MIN_RATIO = 0.5   # in the down position at least this share of palm readings must be "front"
+PALM_FRONT_MIN_RATIO = 0.5   # in the down position at least this share of palm readings must be forward/inward
 PALM_CHECK_ELBOW_MIN = 110   # palm direction is judged only in the lower part of the rep (elbow above this angle)
-PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face the camera to count as 'front'
+PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face a direction to be read (else 'side')
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
+PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
 HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)
 PARALLEL_HANDS = True        # run hand detection at the same time as pose detection (uses a second CPU core)
 HAND_MODEL_COMPLEXITY = 0    # 0 = fastest

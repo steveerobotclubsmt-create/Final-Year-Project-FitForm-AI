@@ -13,6 +13,7 @@ import math
 import numpy as np
 
 from . import config
+from .hand_state import PALM_ALL, PALM_BAD, PALM_GOOD
 
 # MediaPipe Pose landmark indices (person's own left/right)
 ARMS = {
@@ -81,7 +82,7 @@ REASON_TEXT = {
     "elbow": "elbow moved",
     "wrist": "wrist bent",
     "fist": "hand not clenched",
-    "palm_dir": "palm not facing forward",
+    "palm_dir": "palm turned outward or backward",
     "hand_hidden": "hand not visible",
     "fast": "too fast",
     "slow": "too slow",
@@ -93,7 +94,7 @@ REASON_ORDER = ("hand_hidden", "fist", "palm_dir", "elbow", "wrist", "fast", "sl
 class BicepCurlCounter:
     """Counts reps for one arm.
     1. Down position (arm straight, before the lift): the hand must be seen as a fist with the palm
-       facing forward (standard curl). This is the gate - a rep only counts if the start was good.
+       facing forward or towards the body. This is the gate - a rep only counts if the start was good.
     2. Lift: elbow movement, bent wrist, wrong hand or a hidden hand reject the rep only if they last
        longer than FAULT_HOLD_SECONDS, so one-frame detection blips do not spoil a good rep.
     3. Tempo: the lift must not be too fast or too slow."""
@@ -155,9 +156,9 @@ class BicepCurlCounter:
             elif fists * 2 <= len(seen):
                 reasons.add("fist")
         if config.PALM_CHECK:
-            seen = [e[2] for e in window if e[2] in ("front", "back", "side")]
-            front = sum(1 for p in seen if p == "front")
-            notes.append(f"start palm front {front}/{len(seen)}")
+            seen = [e[2] for e in window if e[2] in PALM_ALL]
+            front = sum(1 for p in seen if p in PALM_GOOD)
+            notes.append(f"start palm ok {front}/{len(seen)}")
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
             elif front < config.PALM_FRONT_MIN_RATIO * len(seen):
@@ -175,7 +176,7 @@ class BicepCurlCounter:
 
     def update(self, m, now, hand=None, palm=None):
         """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None) and the
-        palm direction ('front', 'back', 'side' or None). Returns 'counted', 'rejected' or None."""
+        palm direction ('front', 'inward', 'outward', 'back', 'side' or None). Returns 'counted', 'rejected' or None."""
         if m.get("elbow") is None:
             return None
         # Arm out of view for a while (person walked away): ask for the start position again.
@@ -218,7 +219,7 @@ class BicepCurlCounter:
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
         wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
         hand_open = config.FIST_CHECK and hand in ("open", "partial")
-        palm_away = config.PALM_CHECK and palm in ("back", "side") and low
+        palm_away = config.PALM_CHECK and palm in PALM_BAD and low
         hand_hidden = hand_checks and hand is None and palm is None and low
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
