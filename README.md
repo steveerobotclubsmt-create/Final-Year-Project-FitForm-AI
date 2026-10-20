@@ -6,11 +6,11 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 
 ## Features
 - Real-time pose detection (MediaPipe Pose + OpenCV)
-- Strict rep counting per arm: a rep only counts if it starts from full extension, the upper arm stays where it started, the wrist stays straight, the palm faces the front at the bottom (standard curl) and the lift is not too fast
+- Strict rep counting per arm: a rep only counts if it starts from full extension, the upper arm stays where it started, the wrist stays straight, the hand is a clenched fist, the palm faces the front at the bottom (standard curl) and the lift is not too fast. Hand checks are strict: if the hand cannot be seen, the rep does not count
 - 2D joint angles (tested on the Pi: 2D tracks the real arm; the 3D world landmarks compressed the range). Switch with `--angles 3d`
-- Palm-direction check with MediaPipe Hands (reverse grip = rep not counted); optional clenched-fist check with `--fist`
+- Fist and palm-direction checks with MediaPipe Hands (open hand, reverse grip or hand turned outward = rep not counted)
 - Start position: hold the arm straight before the first rep, so stepping into view does not count a rep
-- Live feedback: "Hold your arm straight to start", "Keep elbow still!", "Straighten your wrist!", "Turn your palm to the front!", "Extend arm fully!", "Step back - keep your hands in view"
+- Live feedback: "Hold your arm straight to start", "Keep your elbow still", "Clench your fist", "Turn your palm to the front", "Lower your arm fully", "Good rep!" / "Not counted - <reason>"
 - Single-camera version (a two-camera front + side version is in development)
 - Green/red LED form indicator and buzzer beep on every counted rep (Raspberry Pi GPIO)
 - Calorie estimate (MET x weight x active time; timer starts on the first rep)

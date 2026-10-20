@@ -35,10 +35,10 @@ def parse_args():
     p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
     p.add_argument("--no-server", action="store_true", help="disable the Flask web server")
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
-    p.add_argument("--no-fist", action="store_true", help="turn off the clenched-fist check (off by default)")
-    p.add_argument("--fist", action="store_true", help="require a clenched fist")
+    p.add_argument("--no-fist", action="store_true", help="do not require a clenched fist")
     p.add_argument("--no-palm", action="store_true", help="turn off the palm-direction check")
-    p.add_argument("--debug", action="store_true", help="show live angles on screen and print them for tuning")
+    p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
+    p.add_argument("--debug-screen", action="store_true", help="also show the tuning numbers on the video window")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
     return p.parse_args()
 
@@ -64,8 +64,6 @@ def main():
     feedback = FeedbackEngine()
     if args.no_fist:
         config.FIST_CHECK = False
-    if args.fist:
-        config.FIST_CHECK = True
     if args.no_palm:
         config.PALM_CHECK = False
     if args.angles:
@@ -107,13 +105,16 @@ def main():
                 for arm in drawn:
                     c = feedback.counters[arm]; d = c.last
                     fmt = lambda v: "-" if v is None else f"{v:.0f}"
+                    ps = hands.palm_scores.get(arm) if hands else None
                     print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} (2D {fmt(d.get('elbow2d'))} / "
                           f"3D {fmt(d.get('elbow3d'))}) drift {fmt(d['drift'])} wrist {fmt(d['wrist_angle'])} "
-                          f"hand {d['hand'] or '-'} palm {d.get('palm') or '-'} stage {c.stage or '-'} "
-                          f"ready {c.ready} form_ok {c.form_ok}")
+                          f"hand {d['hand'] or '-'} palm {d.get('palm') or '-'}"
+                          f"{'' if ps is None else f' ({ps:+.2f})'} stage {c.stage or '-'} ready {c.ready}")
             for arm, event in events:
-                ut = feedback.counters[arm].last_up_time
-                lift = f" (lift {ut:.1f} s)" if ut is not None else ""
+                cnt = feedback.counters[arm]
+                ut = cnt.last_up_time
+                lift = f" (lift {ut:.1f} s" + (f", {cnt.last_hand_summary}" if cnt.last_hand_summary else "") + ")" \
+                    if ut is not None else ""
                 if event == "counted":
                     calories.on_rep(now)
                     gpio.beep()
@@ -131,9 +132,9 @@ def main():
                 if landmarks is not None:
                     PoseEngine.draw_skeleton(image, landmarks)
                 for arm, pts in drawn.items():
-                    draw_arm(image, pts, feedback.counters[arm])
+                    draw_arm(image, pts, feedback.counters[arm], show_angle=args.debug_screen)
                 draw_hud(image, feedback, calories.calories(now), calories.active_seconds(now), fps)
-                if args.debug:
+                if args.debug_screen:
                     draw_debug(image, feedback)
                 cv2.imshow("FitForm AI - Bicep Curl", image)
 

@@ -16,6 +16,8 @@ from fitform.hand_state import classify_hand, palm_direction
 # have their own tests further down, which switch them back on.
 config.READY_HOLD_SECONDS = 0.0
 config.MIN_UP_SECONDS = 0.0
+config.FIST_CHECK = False      # the hand-check tests switch these on themselves
+config.PALM_CHECK = False
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -131,14 +133,14 @@ def test_classify_hand():
     assert classify_hand(hand(2)) == "partial"
 
 
-def test_open_palm_rep_rejected():
+def test_open_hand_rep_rejected():
     config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, "open")
     for t, e in ((0.3, 120), (0.5, 90), (0.7, 70)):
         c.update(m(e), t, "open")
     assert c.update(m(30), 1.0, "open") == "rejected"
-    assert c.last_reasons == ["palm open (clench your fist)"]
+    assert c.last_reasons == ["hand not clenched"]
     config.FIST_CHECK = False
 
 
@@ -153,18 +155,22 @@ def test_open_hand_counts_when_fist_not_required():
 def test_fist_rep_counts():
     config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
-    c.update(m(170), 0.0, "open")                 # open hand while resting at the bottom is fine
+    c.update(m(170), 0.0, "fist")
     for t, e in ((0.3, 120), (0.5, 90), (0.7, 70)):
         c.update(m(e), t, "fist")
     assert c.update(m(30), 1.0, "fist") == "counted"
     config.FIST_CHECK = False
 
 
-def test_hidden_hand_is_not_penalised():
+def test_hidden_hand_is_not_counted():
+    """Strict: if the hand is never seen, the rep cannot be checked, so it does not count."""
+    config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, None)
     c.update(m(90), 0.5, None)
-    assert c.update(m(30), 1.0, None) == "counted"
+    assert c.update(m(30), 1.0, None) == "rejected"
+    assert c.last_reasons == ["hand not visible"]
+    config.FIST_CHECK = False
 
 
 def test_3d_measurements():
@@ -191,6 +197,7 @@ def test_engine_fist_rep_counts_with_knuckle_wrist():
             wx, wy = (W - pts["wrist"][0]), pts["wrist"][1]
             self.knuckle = ((wx, wy), (wx + (wx - ex) * 0.3, wy + (wy - ey) * 0.3))   # in line with forearm
 
+    config.FIST_CHECK = True
     fe = FeedbackEngine()
     events = []
     for t, e in enumerate((170, 165, 130, 100, 70, 40)):
@@ -198,6 +205,7 @@ def test_engine_fist_rep_counts_with_knuckle_wrist():
         ev, _ = fe.update(pose, W, H, t * 0.2, world=None, hands={"right": "fist"}, hand_points={"right": pose.knuckle})
         events += ev
     assert ("right", "counted") in events, events
+    config.FIST_CHECK = False
 
 
 # ---------- palm direction (standard curl) ----------
@@ -219,22 +227,32 @@ def test_palm_direction_both_hands():
         assert palm_direction(palm_hand(a, "back"), a)[0] == "back"
 
 
+def _palm_rep(palms):
+    """One rep; palms = palm direction for the frames at elbow 170 (start), 140, 125, 90, 70, 30."""
+    config.PALM_CHECK = True
+    c = BicepCurlCounter("right", alpha=1.0)
+    ev = None
+    for (t, e), p in zip(((0.0, 170), (0.3, 140), (0.5, 125), (0.7, 90), (0.85, 70), (1.0, 30)), palms):
+        ev = c.update(m(e), t, palm=p)
+    config.PALM_CHECK = False
+    return ev, c
+
+
+def test_palm_forward_rep_counts_even_if_back_seen_at_top():
+    """Correct curl: palm to the camera at the bottom; the back of the hand faces the camera near the top."""
+    ev, c = _palm_rep(["front", "front", "front", "back", "back", "back"])
+    assert ev == "counted"
+
+
 def test_reverse_grip_rep_rejected():
-    c = BicepCurlCounter("right", alpha=1.0)
-    c.update(m(170), 0.0, palm="back")
-    for t, e in ((0.3, 140), (0.5, 125), (0.7, 90)):
-        c.update(m(e), t, palm="back")
-    assert c.update(m(30), 1.0, palm="side") == "rejected"
-    assert c.last_reasons == ["palm facing away (turn your palm to the front)"]
+    ev, c = _palm_rep(["back", "back", "back", "back", "side", "side"])
+    assert ev == "rejected" and c.last_reasons == ["palm not facing forward"]
 
 
-def test_palm_front_rep_counts_even_if_back_seen_at_top():
-    """In a correct curl the back of the hand faces the camera near the top; only the lower part counts."""
-    c = BicepCurlCounter("right", alpha=1.0)
-    c.update(m(170), 0.0, palm="front")
-    for t, e, p in ((0.3, 140, "front"), (0.5, 125, "front"), (0.7, 90, "back"), (0.85, 70, "back")):
-        c.update(m(e), t, palm=p)
-    assert c.update(m(30), 1.0, palm="back") == "counted"
+def test_hand_turned_outward_rejected():
+    """Hand rotated out to the side: the camera sees the edge of the hand, never the palm."""
+    ev, c = _palm_rep(["side", "side", "side", "side", "side", "side"])
+    assert ev == "rejected" and c.last_reasons == ["palm not facing forward"]
 
 
 # ---------- tempo + start position ----------
@@ -244,7 +262,7 @@ def test_too_fast_rep_rejected():
     c.update(m(170), 0.0)
     c.update(m(90), 0.15)
     assert c.update(m(30), 0.3) == "rejected"
-    assert c.last_reasons == ["too fast (lift slower)"]
+    assert c.last_reasons == ["too fast"]
     c.update(m(170), 1.0)
     c.update(m(90), 1.5)
     assert c.update(m(30), 2.0) == "counted"

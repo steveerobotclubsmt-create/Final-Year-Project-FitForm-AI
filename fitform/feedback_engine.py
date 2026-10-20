@@ -15,6 +15,7 @@ class FeedbackEngine:
         self.counters = {arm: BicepCurlCounter(arm) for arm in ARMS}
         self.message = "Show your full arm to the camera"
         self.message_color = GREY
+        self._msg_time = -1e9
 
     def update(self, landmarks, width, height, now, world=None, hands=None, hand_points=None, palms=None):
         """landmarks: MediaPipe pose_landmarks for this frame (None if nobody detected).
@@ -55,38 +56,47 @@ class FeedbackEngine:
                 if event:
                     events.append((arm, event))
                 drawn[arm] = pts
-        self._set_message(list(drawn), partly_visible)
+        old = (self.message, self.message_color)
+        self._set_message(list(drawn), partly_visible, events)
+        new = (self.message, self.message_color)
+        # keep a message on screen for a moment so it does not flicker; rep results always show at once
+        if new != old:
+            if events or now - self._msg_time >= config.MESSAGE_HOLD_SECONDS:
+                self._msg_time = now
+            else:
+                self.message, self.message_color = old
         return events, drawn
 
-    def _set_message(self, seen_arms, partly_visible=False):
+    def _set_message(self, seen_arms, partly_visible=False, events=()):
         if not seen_arms:
             if partly_visible:
                 self.message, self.message_color = "Step back - keep your hands in view", ORANGE
             else:
                 self.message, self.message_color = "Show your full arm to the camera", GREY
             return
-        # Report the most urgent problem on any visible arm.
+        # A rep that just finished: say whether it counted (and why not).
+        for arm, event in events:
+            c = self.counters[arm]
+            if event == "counted":
+                self.message, self.message_color = f"{arm.upper()}: Good rep!", GREEN
+            else:
+                why = c.last_reasons[0] if c.last_reasons else "check your form"
+                self.message, self.message_color = f"{arm.upper()}: Not counted - {why}", RED
+            return
+        # Otherwise the most urgent live problem on any visible arm.
         for check, text, color in (
             ("not_ready", "Hold your arm straight to start", ORANGE),
-            ("elbow_swinging", "Keep elbow still!", RED),
-            ("wrist_bent", "Straighten your wrist!", RED),
-            ("palm_away", "Turn your palm to the front!", RED),
-            ("palm_open", "Clench your fist!", RED),
-            ("not_extended", "Extend arm fully!", ORANGE),
+            ("elbow_swinging", "Keep your elbow still", RED),
+            ("hand_open", "Clench your fist", RED),
+            ("palm_away", "Turn your palm to the front", RED),
+            ("wrist_bent", "Keep your wrist straight", RED),
+            ("not_extended", "Lower your arm fully", ORANGE),
         ):
             for arm in seen_arms:
                 if self.counters[arm].last.get(check):
                     self.message, self.message_color = f"{arm.upper()}: {text}", color
                     return
-        arm = seen_arms[0]
-        c = self.counters[arm]
-        if c.stage == "up" and not c.form_ok:
-            why = c.last_reasons[0] if c.last_reasons else "fix form"
-            self.message, self.message_color = f"{arm.upper()}: Not counted - {why}", RED
-        elif c.stage == "up":
-            self.message, self.message_color = f"{arm.upper()}: Good curl!", GREEN
-        else:
-            self.message, self.message_color = "Good form!", GREEN
+        self.message, self.message_color = "Good form", GREEN
 
     def overall_form_ok(self):
         return all(c.form_ok for c in self.counters.values())

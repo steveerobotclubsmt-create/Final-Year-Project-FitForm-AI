@@ -12,13 +12,13 @@ WHITE = (255, 255, 255)
 YELLOW = (0, 255, 255)
 
 
-def draw_arm(image, pts, counter):
+def draw_arm(image, pts, counter, show_angle=False):
     color = GREEN if counter.form_ok else RED
     for joint in ("shoulder", "elbow", "wrist"):
         cv2.circle(image, tuple(pts[joint]), 10, color, -1)
     cv2.line(image, tuple(pts["shoulder"]), tuple(pts["elbow"]), WHITE, 3)
     cv2.line(image, tuple(pts["elbow"]), tuple(pts["wrist"]), WHITE, 3)
-    if counter.last:
+    if counter.last and show_angle:
         ex, ey = pts["elbow"]
         cv2.putText(image, f"{counter.last['elbow_angle']:.0f}", (ex + 10, ey), FONT, 0.7, (255, 255, 0), 2)
 
@@ -56,14 +56,13 @@ def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
         cv2.putText(image, counter.stage or "-", (x + 10, 130), FONT, 0.8, (200, 200, 200), 2)
         status, col = ("GOOD", GREEN) if counter.form_ok else ("BAD FORM", RED)
         cv2.putText(image, status, (x + 10, 158), FONT, 0.6, col, 2)
+        # small hand status: fist (F) and palm direction (P), green = ok, red = wrong, grey = not seen
+        if config.FIST_CHECK:
+            col = {"fist": GREEN, "open": RED, "partial": RED}.get(counter.hand, (120, 120, 120))
+            cv2.putText(image, "FIST", (x + 95, 118), FONT, 0.5, col, 2)
         if config.PALM_CHECK:
-            tag = {"front": ("PALM OK", GREEN), "back": ("PALM BACK", RED), "side": ("PALM ?", YELLOW)}.get(counter.palm)
-        elif config.FIST_CHECK:
-            tag = {"fist": ("FIST", GREEN), "open": ("OPEN", RED), "partial": ("HAND?", YELLOW)}.get(counter.hand)
-        else:
-            tag = None
-        if tag:
-            cv2.putText(image, tag[0], (x + 85, 130), FONT, 0.5, tag[1], 2)
+            col = {"front": GREEN, "back": RED, "side": RED}.get(counter.palm, (120, 120, 120))
+            cv2.putText(image, "PALM", (x + 95, 140), FONT, 0.5, col, 2)
 
     mins, secs = divmod(int(elapsed_s), 60)
     cv2.putText(image, f"{calories_kcal:.2f} kcal   {mins:02d}:{secs:02d}   {fps:.0f} FPS",

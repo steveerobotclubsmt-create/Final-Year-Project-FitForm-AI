@@ -80,18 +80,20 @@ def measure_from_world(world_landmarks, arm):
 REASON_TEXT = {
     "elbow": "elbow moved",
     "wrist": "wrist bent",
-    "palm": "palm open (clench your fist)",
-    "palm_dir": "palm facing away (turn your palm to the front)",
-    "fast": "too fast (lift slower)",
+    "fist": "hand not clenched",
+    "palm_dir": "palm not facing forward",
+    "hand_hidden": "hand not visible",
+    "fast": "too fast",
     "slow": "too slow",
 }
-REASON_ORDER = ("elbow", "wrist", "palm_dir", "palm", "fast", "slow")
+REASON_ORDER = ("hand_hidden", "fist", "palm_dir", "elbow", "wrist", "fast", "slow")
 
 
 class BicepCurlCounter:
     """Counts reps for one arm. A rep only counts if form stayed good for the whole rep:
-    the upper arm stays where it was at the start, the wrist stays straight, the palm faces the
-    front at the bottom (standard curl), and the lift is not too fast or too slow."""
+    it starts from a straight arm, the upper arm stays where it was, the wrist stays straight,
+    the hand is a fist, the palm faces the front at the bottom (standard curl), and the lift is
+    neither too fast nor too slow. Hand checks are strict: a hand that is not seen does not pass."""
 
     def __init__(self, arm, alpha=config.SMOOTHING_ALPHA):
         self.arm = arm
@@ -103,17 +105,15 @@ class BicepCurlCounter:
         self.attempted = 0         # every completed curl, good or bad
         self.rep_times = []        # seconds per counted rep (lifting time)
         self.last_reasons = []     # why the last rejected rep did not count
-        self.last_up_time = None   # lifting time of the last finished curl, for debugging
+        self.last_up_time = None   # lifting time of the last finished curl
+        self.last_hand_summary = ""
         self._rep_start = None
         self._straight_since = None
         self._last_seen = None
         self._smooth = {}
         self._base_vec = None      # upper-arm direction while the arm hangs straight
         self._reasons = set()
-        self._fist_frames = 0
-        self._open_frames = 0
-        self._palm_front = 0
-        self._palm_back = 0
+        self._hand_log = []        # (time, hand state, palm direction, elbow angle) for the hand checks
         self.hand = None
         self.palm = None
         self.last = {}             # latest measurements + form flags, for display/feedback
@@ -131,12 +131,29 @@ class BicepCurlCounter:
         self._smooth[key] = value
         return round(value, 2)
 
-    def _start_rep(self, now):
-        self.form_ok = True
-        self._rep_start = now
-        self._reasons = set()
-        self._fist_frames = self._open_frames = 0
-        self._palm_front = self._palm_back = 0
+    def _hand_reasons(self):
+        """Strict hand checks over the start position + the lift. Returns a set of reason keys."""
+        since = (self._rep_start or 0) - config.HAND_WINDOW_BEFORE
+        window = [e for e in self._hand_log if e[0] >= since]
+        reasons, notes = set(), []
+        if config.FIST_CHECK:
+            seen = [e[1] for e in window if e[1] in ("fist", "open", "partial")]
+            fists = sum(1 for h in seen if h == "fist")
+            notes.append(f"fist {fists}/{len(seen)}")
+            if len(seen) < config.HAND_MIN_READINGS:
+                reasons.add("hand_hidden")
+            elif fists * 2 <= len(seen):
+                reasons.add("fist")
+        if config.PALM_CHECK:
+            lower = [e[2] for e in window if e[2] in ("front", "back", "side") and e[3] > config.PALM_CHECK_ELBOW_MIN]
+            front = sum(1 for p in lower if p == "front")
+            notes.append(f"palm front {front}/{len(lower)}")
+            if len(lower) < config.HAND_MIN_READINGS:
+                reasons.add("hand_hidden")
+            elif front * 2 <= len(lower):
+                reasons.add("palm_dir")
+        self.last_hand_summary = ", ".join(notes)
+        return reasons
 
     def update(self, m, now, hand=None, palm=None):
         """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None) and the
@@ -152,6 +169,10 @@ class BicepCurlCounter:
         wrist = self._ema("wrist", m.get("wrist"))
         upper = self._ema("upper_vec", m.get("upper_vec"))
         self.hand, self.palm = hand, palm
+        self._hand_log.append((now, hand, palm, elbow))
+        keep = config.MAX_UP_SECONDS + config.HAND_WINDOW_BEFORE + 2.0
+        while self._hand_log and now - self._hand_log[0][0] > keep:
+            self._hand_log.pop(0)
 
         straight = elbow > config.DOWN_ANGLE
         if straight:
@@ -172,8 +193,8 @@ class BicepCurlCounter:
 
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
         wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
-        palm_open = config.FIST_CHECK and hand == "open"
-        palm_away = config.PALM_CHECK and palm == "back" and elbow > config.PALM_CHECK_ELBOW_MIN
+        hand_open = config.FIST_CHECK and hand in ("open", "partial")
+        palm_away = config.PALM_CHECK and palm in ("back", "side") and elbow > config.PALM_CHECK_ELBOW_MIN
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
 
@@ -181,41 +202,26 @@ class BicepCurlCounter:
         if straight and self.ready:
             # Arm fully straight: every new attempt starts here with a clean slate, so a
             # half rep that went wrong does not carry its fault into the next proper rep.
-            self._start_rep(now)
+            self.form_ok = True
+            self._rep_start = now
+            self._reasons = set()
             self.stage = "down"
 
-        if self.stage == "down":
-            # palm direction is judged in the lower part of the rep, where front/back is clear
-            if palm in ("front", "back") and elbow > config.PALM_CHECK_ELBOW_MIN:
-                if palm == "front":
-                    self._palm_front += 1
-                else:
-                    self._palm_back += 1
-            # the rest of the form is judged while the arm is actually curling
-            if not straight:
-                if elbow_swinging:
-                    self._reasons.add("elbow")
-                if wrist_bent:
-                    self._reasons.add("wrist")
-                if hand == "fist":
-                    self._fist_frames += 1
-                elif hand == "open":
-                    self._open_frames += 1
-                if elbow_swinging or wrist_bent:
-                    self.form_ok = False
+        if self.stage == "down" and not straight:
+            # form is judged while the arm is actually curling
+            if elbow_swinging:
+                self._reasons.add("elbow")
+            if wrist_bent:
+                self._reasons.add("wrist")
+            if elbow_swinging or wrist_bent:
+                self.form_ok = False
 
         if elbow < config.UP_ANGLE and self.stage == "down":
             self.stage = "up"
             self.attempted += 1
             up_time = now - self._rep_start if self._rep_start is not None else None
             self.last_up_time = up_time
-            if config.FIST_CHECK:
-                mostly_open = self._open_frames >= config.OPEN_PALM_MIN_FRAMES and self._open_frames > self._fist_frames
-                never_fist = config.FIST_STRICT and self._fist_frames == 0
-                if mostly_open or never_fist:
-                    self._reasons.add("palm")
-            if config.PALM_CHECK and self._palm_back >= config.PALM_AWAY_MIN_FRAMES and self._palm_back > self._palm_front:
-                self._reasons.add("palm_dir")
+            self._reasons |= self._hand_reasons()
             if up_time is not None and up_time < config.MIN_UP_SECONDS:
                 self._reasons.add("fast")
             if up_time is not None and up_time > config.MAX_UP_SECONDS:
@@ -233,7 +239,7 @@ class BicepCurlCounter:
 
         self.last = {
             "elbow_angle": elbow, "drift": drift, "wrist_angle": wrist, "hand": hand, "palm": palm,
-            "elbow_swinging": elbow_swinging, "wrist_bent": wrist_bent, "palm_open": palm_open,
+            "elbow_swinging": elbow_swinging, "wrist_bent": wrist_bent, "hand_open": hand_open,
             "palm_away": palm_away, "not_extended": not_extended, "not_ready": not self.ready,
         }
         return event
