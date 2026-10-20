@@ -141,11 +141,12 @@ class BicepCurlCounter:
 
         event = None
         if elbow > config.DOWN_ANGLE:
-            if self.stage != "down":
-                self.form_ok = True          # fresh start for the next rep
-                self._rep_start = now
-                self._reasons = set()
-                self._fist_frames = self._open_frames = 0
+            # Arm fully straight: every new attempt starts here with a clean slate, so a
+            # half rep that went wrong does not carry its fault into the next proper rep.
+            self.form_ok = True
+            self._rep_start = now
+            self._reasons = set()
+            self._fist_frames = self._open_frames = 0
             self.stage = "down"
 
         # Form is judged while the arm is actually curling (between straight and the top).

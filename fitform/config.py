@@ -15,13 +15,14 @@ MODEL_COMPLEXITY = 1         # 0 = fastest (good for Pi 5), 1 = balanced, 2 = mo
 LANDMARK_VISIBILITY_MIN = 0.6
 
 # ---- Bicep curl thresholds (degrees) ----
-DOWN_ANGLE = 145             # elbow angle above this = arm extended (bottom of rep); a straight arm reads ~150-160
-UP_ANGLE = 60                # elbow angle below this = arm curled (top of rep)
+DOWN_ANGLE = 150             # elbow angle above this = arm extended (bottom of rep); 2D straight arm reads ~155-180
+UP_ANGLE = 60                # elbow angle below this = arm curled (top of rep); 2D full curl reads ~10-50
 EXTENSION_MIN_ANGLE = 140    # hint 'Extend arm fully!' when lowering stops short of this
-UPPER_ARM_DRIFT_MAX = 25     # upper arm may move this many degrees from its start position before 'elbow moved'
+UPPER_ARM_DRIFT_MAX = 30     # upper arm may move this many degrees from its start position before 'elbow moved'
 WRIST_STRAIGHT_MIN = 145     # elbow-wrist-knuckle angle below this = wrist bent (needs the hand to be seen)
 SMOOTHING_ALPHA = 0.6        # 1.0 = no smoothing; lower = smoother but slower to react
-USE_3D_ANGLES = True         # use MediaPipe 3D world landmarks (works from the front or the side)
+USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct: 2D straight ~160-180, curled ~10-50;
+                             # 3D only ~140-165 straight and ~70-100 curled, too compressed to count reps)
                              # override at run time with --angles 2d / --angles 3d
 
 # ---- Hand / fist check (MediaPipe Hands) ----

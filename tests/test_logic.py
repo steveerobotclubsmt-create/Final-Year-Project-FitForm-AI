@@ -83,6 +83,16 @@ def test_swinging_rep_rejected():
     assert c.update(m(30), 3.0) == "counted"
 
 
+def test_failed_half_rep_does_not_block_next_rep():
+    """A bad half rep (elbow moved, then lowered without reaching the top) must not stop the next good rep."""
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0)
+    c.update(m(100, drift_deg=45), 0.5)           # elbow swings, arm never reaches the top
+    c.update(m(170), 1.0)                         # straightens again: fresh start
+    c.update(m(90), 1.5)
+    assert c.update(m(30), 2.0) == "counted"
+
+
 def test_side_raised_arm_is_not_a_false_swing():
     """Arm held out to the side from the start (front view): the start position is the reference."""
     c = BicepCurlCounter("right", alpha=1.0)
