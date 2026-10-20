@@ -28,6 +28,8 @@ class HandChecker:
         self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
         self.palm_scores = {"right": None, "left": None}   # (front, inward), each -1..1
         self.hand_landmarks = []
+        self.raw = {"right": None, "left": None}      # the matched hand's 21 landmarks (for tools/palm_calibrate.py)
+        self.handed = {"right": None, "left": None}   # MediaPipe's own left/right guess for that hand: (label, score)
 
     def process(self, frame_bgr, pose_landmarks):
         """frame_bgr: the same un-mirrored frame given to PoseEngine.
@@ -44,6 +46,9 @@ class HandChecker:
         points = {"right": None, "left": None}
         palms = {"right": None, "left": None}
         scores = {"right": None, "left": None}
+        raw = {"right": None, "left": None}
+        handed = {"right": None, "left": None}
+        multi_handed = result.multi_handedness or []
         if pose_landmarks is not None and self.hand_landmarks:
             lm = pose_landmarks.landmark
             # every (arm, hand) pair with its distance; then give each arm its nearest hand, one hand per arm
@@ -72,10 +77,16 @@ class HandChecker:
                                                       config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE,
                                                       toward_mid)
                 palms[arm], scores[arm] = label, (front, inward)
+                raw[arm] = b
+                if k < len(multi_handed):
+                    cl = multi_handed[k].classification[0]
+                    handed[arm] = (cl.label, cl.score)
         self.states = states
         self.points = points
         self.palms = palms
         self.palm_scores = scores
+        self.raw = raw
+        self.handed = handed
         return states
 
     def close(self):
