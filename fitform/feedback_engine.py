@@ -16,7 +16,7 @@ class FeedbackEngine:
         self.message = "Show your full arm to the camera"
         self.message_color = GREY
 
-    def update(self, landmarks, width, height, now, world=None, hands=None, hand_points=None):
+    def update(self, landmarks, width, height, now, world=None, hands=None, hand_points=None, palms=None):
         """landmarks: MediaPipe pose_landmarks for this frame (None if nobody detected).
         world: MediaPipe pose_world_landmarks (3D) or None. hands: {'right': state, 'left': state} or None.
         hand_points: {'right': (wrist_px, knuckle_px), ...} from MediaPipe Hands (un-mirrored pixels) or None.
@@ -24,6 +24,7 @@ class FeedbackEngine:
         events, drawn = [], {}
         hands = hands or {}
         hand_points = hand_points or {}
+        palms = palms or {}
         partly_visible = False
         if landmarks is not None:
             for arm in ARMS:
@@ -47,7 +48,7 @@ class FeedbackEngine:
                     meas["wrist"] = get_angle((lm[e].x * width, lm[e].y * height), hp[0], hp[1])
                 else:
                     meas["wrist"] = None
-                event = self.counters[arm].update(meas, now, hands.get(arm))
+                event = self.counters[arm].update(meas, now, hands.get(arm), palms.get(arm))
                 # both angle versions, so --debug can show which one matches the real arm
                 self.counters[arm].last["elbow2d"] = meas2d["elbow"]
                 self.counters[arm].last["elbow3d"] = meas3d["elbow"] if meas3d is not None else None
@@ -66,8 +67,10 @@ class FeedbackEngine:
             return
         # Report the most urgent problem on any visible arm.
         for check, text, color in (
+            ("not_ready", "Hold your arm straight to start", ORANGE),
             ("elbow_swinging", "Keep elbow still!", RED),
             ("wrist_bent", "Straighten your wrist!", RED),
+            ("palm_away", "Turn your palm to the front!", RED),
             ("palm_open", "Clench your fist!", RED),
             ("not_extended", "Extend arm fully!", ORANGE),
         ):
@@ -78,7 +81,8 @@ class FeedbackEngine:
         arm = seen_arms[0]
         c = self.counters[arm]
         if c.stage == "up" and not c.form_ok:
-            self.message, self.message_color = f"{arm.upper()}: Fix form - won't count!", RED
+            why = c.last_reasons[0] if c.last_reasons else "fix form"
+            self.message, self.message_color = f"{arm.upper()}: Not counted - {why}", RED
         elif c.stage == "up":
             self.message, self.message_color = f"{arm.upper()}: Good curl!", GREEN
         else:

@@ -35,7 +35,9 @@ def parse_args():
     p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
     p.add_argument("--no-server", action="store_true", help="disable the Flask web server")
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
-    p.add_argument("--no-fist", action="store_true", help="turn off the clenched-fist check")
+    p.add_argument("--no-fist", action="store_true", help="turn off the clenched-fist check (off by default)")
+    p.add_argument("--fist", action="store_true", help="require a clenched fist")
+    p.add_argument("--no-palm", action="store_true", help="turn off the palm-direction check")
     p.add_argument("--debug", action="store_true", help="show live angles on screen and print them for tuning")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
     return p.parse_args()
@@ -62,11 +64,16 @@ def main():
     feedback = FeedbackEngine()
     if args.no_fist:
         config.FIST_CHECK = False
+    if args.fist:
+        config.FIST_CHECK = True
+    if args.no_palm:
+        config.PALM_CHECK = False
     if args.angles:
         config.USE_3D_ANGLES = args.angles == "3d"
     print(f"Angles: {'3D' if config.USE_3D_ANGLES else '2D'} | straight above {config.DOWN_ANGLE} | "
-          f"curled below {config.UP_ANGLE} | fist check {'on' if config.FIST_CHECK else 'off'}")
-    hands = HandChecker() if config.FIST_CHECK else None
+          f"curled below {config.UP_ANGLE} | palm check {'on' if config.PALM_CHECK else 'off'} | "
+          f"fist check {'on' if config.FIST_CHECK else 'off'} | lift {config.MIN_UP_SECONDS}-{config.MAX_UP_SECONDS} s")
+    hands = HandChecker() if (config.FIST_CHECK or config.PALM_CHECK) else None
     calories = CalorieTracker(weight_kg=args.weight)
     gpio = GPIOFeedback(enabled=not args.no_gpio and config.GPIO_ENABLED)
     logger = SessionLogger()
@@ -93,7 +100,8 @@ def main():
 
             hand_states = hands.process(frame, landmarks) if hands else None
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
-                                            hand_points=hands.points if hands else None)
+                                            hand_points=hands.points if hands else None,
+                                            palms=hands.palms if hands else None)
             if args.debug and now - last_dbg >= 0.5:
                 last_dbg = now
                 for arm in drawn:
@@ -101,15 +109,18 @@ def main():
                     fmt = lambda v: "-" if v is None else f"{v:.0f}"
                     print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} (2D {fmt(d.get('elbow2d'))} / "
                           f"3D {fmt(d.get('elbow3d'))}) drift {fmt(d['drift'])} wrist {fmt(d['wrist_angle'])} "
-                          f"hand {d['hand'] or '-'} stage {c.stage or '-'} form_ok {c.form_ok}")
+                          f"hand {d['hand'] or '-'} palm {d.get('palm') or '-'} stage {c.stage or '-'} "
+                          f"ready {c.ready} form_ok {c.form_ok}")
             for arm, event in events:
+                ut = feedback.counters[arm].last_up_time
+                lift = f" (lift {ut:.1f} s)" if ut is not None else ""
                 if event == "counted":
                     calories.on_rep(now)
                     gpio.beep()
-                    print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted")
+                    print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted{lift}")
                 else:
                     why = ", ".join(feedback.counters[arm].last_reasons) or "bad form"
-                    print(f"x {arm.capitalize()} rep NOT counted - {why}")
+                    print(f"x {arm.capitalize()} rep NOT counted - {why}{lift}")
             gpio.show_form(feedback.overall_form_ok())
 
             fps_n += 1

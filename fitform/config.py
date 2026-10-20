@@ -25,8 +25,21 @@ USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct:
                              # 3D only ~140-165 straight and ~70-100 curled, too compressed to count reps)
                              # override at run time with --angles 2d / --angles 3d
 
+# ---- Rep quality ----
+READY_HOLD_SECONDS = 0.5     # before the first rep (or after the arm left the view) hold the arm straight this long
+ARM_LOST_RESET_SECONDS = 2.0 # arm out of view longer than this -> must show the ready position again
+MIN_UP_SECONDS = 0.6         # lifting (straight -> top) faster than this = "too fast", rep not counted
+MAX_UP_SECONDS = 5.0         # lifting slower than this = "too slow", rep not counted
+
+# ---- Palm direction (standard curl: palm faces the camera / front at the bottom of the curl) ----
+PALM_CHECK = True            # reject a rep done with the back of the hand to the front (reverse grip)
+PALM_CHECK_ELBOW_MIN = 120   # palm is judged only in the lower part of the rep (elbow above this angle)
+PALM_MIN_SCORE = 0.3         # 0..1 how clearly the palm must face front/back to be counted as a reading
+PALM_AWAY_MIN_FRAMES = 2     # 'away' readings needed (and more than 'front' readings) to reject a rep
+PALM_SIGN = 1                # set to -1 if the debug view shows FRONT when the back of the hand faces the camera
+
 # ---- Hand / fist check (MediaPipe Hands) ----
-FIST_CHECK = True            # a rep only counts if the hand is a fist (holding the dumbbell)
+FIST_CHECK = False           # True = a rep only counts if the hand is a clenched fist (not required)
 FIST_STRICT = False          # False: a hand that can't be seen (hidden by the dumbbell) is not penalised
 OPEN_PALM_MIN_FRAMES = 2     # open palm must be seen in at least this many checked frames to reject a rep
 HAND_EVERY_N = 2             # run hand detection every N frames (higher = faster FPS on the Pi)

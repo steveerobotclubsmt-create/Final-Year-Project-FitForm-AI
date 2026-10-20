@@ -6,7 +6,7 @@ import math
 import cv2
 
 from . import config
-from .hand_state import classify_hand
+from .hand_state import classify_hand, palm_direction
 
 POSE_WRIST = {"right": 16, "left": 15}
 
@@ -25,6 +25,7 @@ class HandChecker:
         self._frame = 0
         self.states = {"right": None, "left": None}
         self.points = {"right": None, "left": None}   # (wrist, middle knuckle) pixel points, un-mirrored
+        self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
         self.hand_landmarks = []
 
     def process(self, frame_bgr, pose_landmarks):
@@ -40,6 +41,7 @@ class HandChecker:
         self.hand_landmarks = result.multi_hand_landmarks or []
         states = {"right": None, "left": None}
         points = {"right": None, "left": None}
+        palms = {"right": None, "left": None}
         if pose_landmarks is not None and self.hand_landmarks:
             lm = pose_landmarks.landmark
             for arm, wi in POSE_WRIST.items():
@@ -55,8 +57,10 @@ class HandChecker:
                     states[arm] = classify_hand(best.landmark, w, h)
                     b = best.landmark
                     points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
+                    palms[arm] = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE)[0]
         self.states = states
         self.points = points
+        self.palms = palms
         return states
 
     def close(self):

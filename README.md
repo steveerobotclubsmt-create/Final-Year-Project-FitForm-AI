@@ -6,10 +6,11 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 
 ## Features
 - Real-time pose detection (MediaPipe Pose + OpenCV)
-- Strict rep counting per arm: a rep only counts if the upper arm stays where it started, the wrist stays straight and the hand is a clenched fist, starting from full extension
-- 3D joint angles from MediaPipe world landmarks, so it works from the front or the side
-- Fist check with MediaPipe Hands (open palm = rep not counted)
-- Live feedback: "Keep elbow still!", "Straighten your wrist!", "Clench your fist!", "Extend arm fully!", "Step back - keep your hands in view"
+- Strict rep counting per arm: a rep only counts if it starts from full extension, the upper arm stays where it started, the wrist stays straight, the palm faces the front at the bottom (standard curl) and the lift is not too fast
+- 2D joint angles (tested on the Pi: 2D tracks the real arm; the 3D world landmarks compressed the range). Switch with `--angles 3d`
+- Palm-direction check with MediaPipe Hands (reverse grip = rep not counted); optional clenched-fist check with `--fist`
+- Start position: hold the arm straight before the first rep, so stepping into view does not count a rep
+- Live feedback: "Hold your arm straight to start", "Keep elbow still!", "Straighten your wrist!", "Turn your palm to the front!", "Extend arm fully!", "Step back - keep your hands in view"
 - Single-camera version (a two-camera front + side version is in development)
 - Green/red LED form indicator and buzzer beep on every counted rep (Raspberry Pi GPIO)
 - Calorie estimate (MET x weight x active time; timer starts on the first rep)
@@ -25,8 +26,8 @@ fitform-ai/
 │   ├── camera_thread.py     # background camera capture (no lag / buffering)
 │   ├── pose_engine.py       # MediaPipe Pose wrapper
 │   ├── bicep_curl.py        # joint angles + rep-counting state machine
-│   ├── hand_check.py        # MediaPipe Hands: fist / open palm per arm
-│   ├── hand_state.py        # fist vs open classification (no camera needed)
+│   ├── hand_check.py        # MediaPipe Hands: palm direction (and fist / open) per arm
+│   ├── hand_state.py        # palm direction + fist/open classification (no camera needed)
 │   ├── feedback_engine.py   # runs the rep counters and chooses the feedback text
 │   ├── display_ui.py        # on-screen overlay
 │   ├── gpio_feedback.py     # LEDs + buzzer (auto-disabled on a laptop)

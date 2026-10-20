@@ -8,8 +8,14 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from fitform import config
 from fitform.bicep_curl import BicepCurlCounter, get_angle, measure_from_points, measure_from_world
-from fitform.hand_state import classify_hand
+from fitform.hand_state import classify_hand, palm_direction
+
+# The basic counting tests below use short, simple sequences; the start-hold and tempo rules
+# have their own tests further down, which switch them back on.
+config.READY_HOLD_SECONDS = 0.0
+config.MIN_UP_SECONDS = 0.0
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -126,20 +132,32 @@ def test_classify_hand():
 
 
 def test_open_palm_rep_rejected():
+    config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, "open")
     for t, e in ((0.3, 120), (0.5, 90), (0.7, 70)):
         c.update(m(e), t, "open")
     assert c.update(m(30), 1.0, "open") == "rejected"
     assert c.last_reasons == ["palm open (clench your fist)"]
+    config.FIST_CHECK = False
+
+
+def test_open_hand_counts_when_fist_not_required():
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, "open")
+    for t, e in ((0.3, 120), (0.5, 90), (0.7, 70)):
+        c.update(m(e), t, "open")
+    assert c.update(m(30), 1.0, "open") == "counted"
 
 
 def test_fist_rep_counts():
+    config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, "open")                 # open hand while resting at the bottom is fine
     for t, e in ((0.3, 120), (0.5, 90), (0.7, 70)):
         c.update(m(e), t, "fist")
     assert c.update(m(30), 1.0, "fist") == "counted"
+    config.FIST_CHECK = False
 
 
 def test_hidden_hand_is_not_penalised():
@@ -180,6 +198,70 @@ def test_engine_fist_rep_counts_with_knuckle_wrist():
         ev, _ = fe.update(pose, W, H, t * 0.2, world=None, hands={"right": "fist"}, hand_points={"right": pose.knuckle})
         events += ev
     assert ("right", "counted") in events, events
+
+
+# ---------- palm direction (standard curl) ----------
+def palm_hand(arm_name, facing):
+    """Fake hand, fingers pointing down (arm hanging), seen in the un-mirrored camera image.
+    Person's right hand, palm to the camera (standard grip): the thumb points away from the body,
+    i.e. the index knuckle is on the image LEFT (the person's right side appears on the image left)."""
+    pts = [P(0.5, 0.5) for _ in range(21)]
+    pts[0] = P(0.50, 0.50)                                   # wrist
+    s = -1 if (arm_name == "right") == (facing == "front") else 1
+    pts[5] = P(0.50 + 0.03 * s, 0.56)                        # index knuckle
+    pts[17] = P(0.50 - 0.03 * s, 0.56)                       # little-finger knuckle
+    return pts
+
+
+def test_palm_direction_both_hands():
+    for a in ("right", "left"):
+        assert palm_direction(palm_hand(a, "front"), a)[0] == "front"
+        assert palm_direction(palm_hand(a, "back"), a)[0] == "back"
+
+
+def test_reverse_grip_rep_rejected():
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, palm="back")
+    for t, e in ((0.3, 140), (0.5, 125), (0.7, 90)):
+        c.update(m(e), t, palm="back")
+    assert c.update(m(30), 1.0, palm="side") == "rejected"
+    assert c.last_reasons == ["palm facing away (turn your palm to the front)"]
+
+
+def test_palm_front_rep_counts_even_if_back_seen_at_top():
+    """In a correct curl the back of the hand faces the camera near the top; only the lower part counts."""
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, palm="front")
+    for t, e, p in ((0.3, 140, "front"), (0.5, 125, "front"), (0.7, 90, "back"), (0.85, 70, "back")):
+        c.update(m(e), t, palm=p)
+    assert c.update(m(30), 1.0, palm="back") == "counted"
+
+
+# ---------- tempo + start position ----------
+def test_too_fast_rep_rejected():
+    config.MIN_UP_SECONDS = 0.6
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0)
+    c.update(m(90), 0.15)
+    assert c.update(m(30), 0.3) == "rejected"
+    assert c.last_reasons == ["too fast (lift slower)"]
+    c.update(m(170), 1.0)
+    c.update(m(90), 1.5)
+    assert c.update(m(30), 2.0) == "counted"
+    config.MIN_UP_SECONDS = 0.0
+
+
+def test_no_count_before_start_position():
+    """Arm swinging up as the person steps in must not count; holding it straight first arms the counter."""
+    config.READY_HOLD_SECONDS = 0.5
+    c = BicepCurlCounter("right", alpha=1.0)
+    assert c.update(m(170), 0.0) is None          # straight only for a moment
+    assert c.update(m(30), 0.2) is None           # curl right away: not ready, no rep
+    c.update(m(170), 1.0)
+    c.update(m(170), 1.6)                         # held straight 0.6 s -> ready
+    c.update(m(90), 2.0)
+    assert c.update(m(30), 2.5) == "counted"
+    config.READY_HOLD_SECONDS = 0.0
 
 
 # ---------- calories + logging ----------

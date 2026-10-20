@@ -3,6 +3,8 @@ calories, elapsed time and the feedback bar."""
 
 import cv2
 
+from . import config
+
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 GREEN = (0, 255, 0)
 RED = (0, 0, 255)
@@ -35,7 +37,7 @@ def draw_debug(image, feedback):
             return "-" if v is None else f"{v:.0f}"
         txt = (f"{arm[0].upper()}: elbow {fmt(d.get('elbow_angle'))} (2D {fmt(d.get('elbow2d'))}/3D {fmt(d.get('elbow3d'))})  "
                f"drift {fmt(d.get('drift'))}  "
-               f"wrist {fmt(d.get('wrist_angle'))}  hand {d.get('hand') or '-'}  stage {c.stage or '-'}")
+               f"wrist {fmt(d.get('wrist_angle'))}  palm {d.get('palm') or '-'}  stage {c.stage or '-'}")
         cv2.rectangle(image, (0, y - 20), (w, y + 6), (0, 0, 0), -1)
         cv2.putText(image, txt, (8, y), FONT, 0.55, YELLOW, 1)
         y += 28
@@ -54,9 +56,14 @@ def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
         cv2.putText(image, counter.stage or "-", (x + 10, 130), FONT, 0.8, (200, 200, 200), 2)
         status, col = ("GOOD", GREEN) if counter.form_ok else ("BAD FORM", RED)
         cv2.putText(image, status, (x + 10, 158), FONT, 0.6, col, 2)
-        hand = {"fist": ("FIST", GREEN), "open": ("OPEN", RED), "partial": ("HAND?", YELLOW)}.get(counter.hand)
-        if hand:
-            cv2.putText(image, hand[0], (x + 105, 130), FONT, 0.6, hand[1], 2)
+        if config.PALM_CHECK:
+            tag = {"front": ("PALM OK", GREEN), "back": ("PALM BACK", RED), "side": ("PALM ?", YELLOW)}.get(counter.palm)
+        elif config.FIST_CHECK:
+            tag = {"fist": ("FIST", GREEN), "open": ("OPEN", RED), "partial": ("HAND?", YELLOW)}.get(counter.hand)
+        else:
+            tag = None
+        if tag:
+            cv2.putText(image, tag[0], (x + 85, 130), FONT, 0.5, tag[1], 2)
 
     mins, secs = divmod(int(elapsed_s), 60)
     cv2.putText(image, f"{calories_kcal:.2f} kcal   {mins:02d}:{secs:02d}   {fps:.0f} FPS",
