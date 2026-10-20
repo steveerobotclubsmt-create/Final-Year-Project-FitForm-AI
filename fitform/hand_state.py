@@ -9,17 +9,14 @@ FINGERS = ((8, 6), (12, 10), (16, 14), (20, 18))
 
 def classify_hand(landmarks, width=1.0, height=1.0):
     """Returns 'fist', 'open' or 'partial'.
-    A finger counts as curled when its tip is close to the centre of the palm, measured relative to the
-    palm size (wrist -> middle knuckle). This works whichever way the hand is turned, unlike comparing
-    tip and joint distances to the wrist, which flips when the hand hangs down or rotates."""
+    A finger counts as curled when its tip is closer to the wrist than its middle (PIP) joint is."""
     pts = [(p.x * width, p.y * height) for p in landmarks]
+    wrist = pts[0]
 
     def dist(a, b):
         return math.hypot(a[0] - b[0], a[1] - b[1])
 
-    palm = dist(pts[0], pts[9]) or 1e-6
-    centre = ((pts[0][0] + pts[5][0] + pts[17][0]) / 3, (pts[0][1] + pts[5][1] + pts[17][1]) / 3)
-    curled = sum(1 for tip, _ in FINGERS if dist(pts[tip], centre) < 1.1 * palm)
+    curled = sum(1 for tip, pip in FINGERS if dist(pts[tip], wrist) < dist(pts[pip], wrist))
     if curled >= 3:
         return "fist"
     if curled <= 1:

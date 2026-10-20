@@ -87,8 +87,8 @@ class FeedbackEngine:
         for check, text, color in (
             ("not_ready", "Hold your arm straight to start", ORANGE),
             ("elbow_swinging", "Keep your elbow still", RED),
-            ("hand_open", "Close your hand", RED),
-            ("palm_away", "Turn your hand to the front", RED),
+            ("hand_open", "Clench your fist", RED),
+            ("palm_away", "Turn your palm to the front", RED),
             ("wrist_bent", "Keep your wrist straight", RED),
             ("not_extended", "Lower your arm fully", ORANGE),
         ):

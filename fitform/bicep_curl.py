@@ -80,11 +80,12 @@ def measure_from_world(world_landmarks, arm):
 REASON_TEXT = {
     "elbow": "elbow moved",
     "wrist": "wrist bent",
-    "fist": "hand open (close your hand)",
-    "palm_dir": "hand turned outward",
+    "fist": "hand not clenched",
+    "palm_dir": "palm not facing forward",
     "hand_hidden": "hand not visible",
     "fast": "too fast",
     "slow": "too slow",
+    "not_lowered": "arm not straightened at the bottom",
 }
 REASON_ORDER = ("hand_hidden", "fist", "palm_dir", "elbow", "wrist", "fast", "slow")
 
@@ -119,7 +120,8 @@ class BicepCurlCounter:
         self._reasons = set()
         self._start_checked = False
         self._fault_since = {}
-        self._hand_log = []        # (time, hand state, palm direction, arm straight?)
+        self._hand_log = []        # (time, hand state, palm direction, elbow angle)
+        self._rose_since_top = False   # arm went back down after the top without becoming straight
         self.hand = None
         self.palm = None
         self.last = {}             # latest measurements + form flags, for display/feedback
@@ -140,21 +142,22 @@ class BicepCurlCounter:
     def _start_position_reasons(self, now):
         """Checks the hand in the down position just before the lift. Returns a set of reason keys."""
         since = (self._rep_start if self._rep_start is not None else now) - config.HAND_WINDOW_BEFORE
-        window = [e for e in self._hand_log if e[0] >= since and e[3]]
+        # the down position = the lower part of the movement (straight arm and the end of the
+        # previous lowering) in the last HAND_WINDOW_BEFORE seconds before the lift
+        window = [e for e in self._hand_log if e[0] >= since and e[3] > config.PALM_CHECK_ELBOW_MIN]
         reasons, notes = set(), []
         if config.FIST_CHECK:
             seen = [e[1] for e in window if e[1] in ("fist", "open", "partial")]
-            closed = sum(1 for h in seen if h != "open")
-            notes.append(f"start closed hand {closed}/{len(seen)}")
+            fists = sum(1 for h in seen if h == "fist")
+            notes.append(f"start fist {fists}/{len(seen)}")
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
-            elif closed * 2 <= len(seen):
+            elif fists * 2 <= len(seen):
                 reasons.add("fist")
         if config.PALM_CHECK:
             seen = [e[2] for e in window if e[2] in ("front", "back", "side")]
-            good = ("front", "back") if config.PALM_ALLOW_BACK else ("front",)
-            front = sum(1 for p in seen if p in good)
-            notes.append(f"start palm facing camera {front}/{len(seen)}")
+            front = sum(1 for p in seen if p == "front")
+            notes.append(f"start palm front {front}/{len(seen)}")
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
             elif front < config.PALM_FRONT_MIN_RATIO * len(seen):
@@ -185,10 +188,11 @@ class BicepCurlCounter:
         upper = self._ema("upper_vec", m.get("upper_vec"))
         self.hand, self.palm = hand, palm
 
-        straight_raw = elbow > config.DOWN_ANGLE
+        # first rep: the arm must be properly straight; later reps restart a little earlier (REARM_ANGLE)
+        straight_raw = elbow > (config.DOWN_ANGLE if not self.ready else config.REARM_ANGLE)
         self._straight_frames = self._straight_frames + 1 if straight_raw else 0
         straight = self._straight_frames >= config.STRAIGHT_CONFIRM_FRAMES
-        self._hand_log.append((now, hand, palm, straight_raw))
+        self._hand_log.append((now, hand, palm, elbow))
         keep = config.MAX_UP_SECONDS + config.HAND_WINDOW_BEFORE + 2.0
         while self._hand_log and now - self._hand_log[0][0] > keep:
             self._hand_log.pop(0)
@@ -213,9 +217,8 @@ class BicepCurlCounter:
         low = elbow > config.PALM_CHECK_ELBOW_MIN
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
         wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
-        hand_open = config.FIST_CHECK and hand == "open"
-        bad_palm = ("side",) if config.PALM_ALLOW_BACK else ("back", "side")
-        palm_away = config.PALM_CHECK and palm in bad_palm and low
+        hand_open = config.FIST_CHECK and hand in ("open", "partial")
+        palm_away = config.PALM_CHECK and palm in ("back", "side") and low
         hand_hidden = hand_checks and hand is None and palm is None and low
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
@@ -229,6 +232,7 @@ class BicepCurlCounter:
             self._reasons = set()
             self._fault_since = {}
             self._start_checked = False
+            self._rose_since_top = False
             self.stage = "down"
 
         if self.stage == "down" and not straight_raw:
@@ -243,6 +247,18 @@ class BicepCurlCounter:
                 self.form_ok = False
 
         self._top_frames = self._top_frames + 1 if elbow < config.UP_ANGLE else 0
+        # Curled again without straightening the arm in between: tell the user instead of staying silent.
+        if self.stage == "up":
+            if elbow > config.PALM_CHECK_ELBOW_MIN:
+                self._rose_since_top = True
+            elif self._rose_since_top and self._top_frames >= config.TOP_CONFIRM_FRAMES:
+                self._rose_since_top = False
+                self.attempted += 1
+                self.form_ok = False
+                self.last_up_time = None
+                self.last_hand_summary = ""
+                self.last_reasons = [REASON_TEXT["not_lowered"]]
+                event = "rejected"
         if self.stage == "down" and self._top_frames >= config.TOP_CONFIRM_FRAMES:
             self.stage = "up"
             self.attempted += 1
