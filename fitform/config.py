@@ -30,22 +30,27 @@ USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct:
 # ---- Rep quality ----
 READY_HOLD_SECONDS = 0.5     # before the first rep (or after the arm left the view) hold the arm straight this long
 ARM_LOST_RESET_SECONDS = 2.0 # arm out of view longer than this -> must show the ready position again
-MIN_UP_SECONDS = 0.6         # lifting (straight -> top) faster than this = "too fast", rep not counted
+MIN_UP_SECONDS = 0.4         # lifting (straight -> top) faster than this = "too fast" (normal reps measured 0.5-0.9 s)
 MAX_UP_SECONDS = 5.0         # lifting slower than this = "too slow", rep not counted
+STRAIGHT_CONFIRM_FRAMES = 2  # arm must read straight this many frames in a row (ignores one-frame angle jumps)
+TOP_CONFIRM_FRAMES = 2       # arm must read curled this many frames in a row before the rep is finished
+FAULT_HOLD_SECONDS = 0.3     # during the lift a fault (elbow moved, wrist bent, wrong hand, hand hidden)
+                             # must last longer than this to reject the rep; shorter blips are ignored
 
 # ---- Hand checks (MediaPipe Hands) - strict: the hand must be seen and correct, or the rep is not counted ----
 FIST_CHECK = True            # hand must be a clenched fist (or wrapped round a bottle / dumbbell) during the curl
 PALM_CHECK = True            # standard curl: palm faces the camera at the bottom of the curl
-HAND_WINDOW_BEFORE = 1.0     # seconds before the lift starts that are also checked (the start position)
-HAND_MIN_READINGS = 2        # hand must be seen in at least this many checked frames, else "show your hand"
+HAND_WINDOW_BEFORE = 1.0     # the down (start) position: last N seconds with the arm straight before the lift
+HAND_MIN_READINGS = 2        # hand must be seen this many times in the down position, else "hand not visible"
+PALM_FRONT_MIN_RATIO = 0.5   # in the down position at least this share of palm readings must be "front"
 PALM_CHECK_ELBOW_MIN = 110   # palm direction is judged only in the lower part of the rep (elbow above this angle)
 PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face the camera to count as 'front'
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)
 PARALLEL_HANDS = True        # run hand detection at the same time as pose detection (uses a second CPU core)
 HAND_MODEL_COMPLEXITY = 0    # 0 = fastest
-HAND_MIN_CONFIDENCE = 0.5
-HAND_MATCH_DIST = 0.12       # hand must be within this fraction of the frame width of the pose wrist
+HAND_MIN_CONFIDENCE = 0.4
+HAND_MATCH_DIST = 0.18       # hand must be within this fraction of the frame width of the pose wrist
 
 # ---- Screen ----
 MESSAGE_HOLD_SECONDS = 1.0   # a feedback message stays at least this long (stops the text flickering)

@@ -18,6 +18,10 @@ config.READY_HOLD_SECONDS = 0.0
 config.MIN_UP_SECONDS = 0.0
 config.FIST_CHECK = False      # the hand-check tests switch these on themselves
 config.PALM_CHECK = False
+config.STRAIGHT_CONFIRM_FRAMES = 1   # one frame per position in the short sequences below
+config.TOP_CONFIRM_FRAMES = 1
+config.FAULT_HOLD_SECONDS = 0.0      # faults count at once here; the hold time has its own tests
+config.HAND_MIN_READINGS = 1
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -280,6 +284,63 @@ def test_no_count_before_start_position():
     c.update(m(90), 2.0)
     assert c.update(m(30), 2.5) == "counted"
     config.READY_HOLD_SECONDS = 0.0
+
+
+# ---------- glitches and short detection gaps (real-camera behaviour) ----------
+def test_one_frame_angle_jump_does_not_restart_the_rep():
+    """Forearm pointing at the camera can make the 2D angle jump for a frame mid-lift."""
+    config.STRAIGHT_CONFIRM_FRAMES, config.TOP_CONFIRM_FRAMES, config.MIN_UP_SECONDS = 2, 2, 0.4
+    c = BicepCurlCounter("right", alpha=1.0)
+    events = []
+    for t, e in ((0.0, 170), (0.1, 170), (0.3, 130), (0.5, 90), (0.55, 170), (0.6, 70), (0.75, 40), (0.85, 35)):
+        events.append(c.update(m(e), t))
+    assert "counted" in events and c.count == 1 and c.rep_times[0] > 0.4
+    config.STRAIGHT_CONFIRM_FRAMES, config.TOP_CONFIRM_FRAMES, config.MIN_UP_SECONDS = 1, 1, 0.0
+
+
+def test_hand_hidden_briefly_during_lift_still_counts():
+    config.FIST_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, "fist")
+    c.update(m(170), 0.1, "fist")                 # good down position
+    c.update(m(140), 0.3, None)                   # hand lost for 0.15 s
+    c.update(m(120), 0.45, None)
+    c.update(m(90), 0.6, "fist")
+    assert c.update(m(35), 0.9, "fist") == "counted"
+    config.FIST_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_hand_hidden_too_long_is_not_counted():
+    config.FIST_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, "fist")
+    for t, e in ((0.2, 145), (0.4, 135), (0.6, 120)):   # hand gone for 0.4 s in the lower part
+        c.update(m(e), t, None)
+    assert c.update(m(35), 1.0, None) == "rejected"
+    assert c.last_reasons == ["hand not visible"]
+    config.FIST_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_palm_turned_out_for_long_during_lift_rejected():
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, palm="front")           # good start ...
+    for t, e in ((0.2, 140), (0.4, 130), (0.6, 120)):   # ... then hand turned out for 0.4 s
+        c.update(m(e), t, palm="side")
+    assert c.update(m(35), 1.0, palm="back") == "rejected"
+    assert c.last_reasons == ["palm not facing forward"]
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_one_bad_palm_reading_is_ignored():
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, palm="front")
+    c.update(m(140), 0.2, palm="side")            # single blip
+    c.update(m(125), 0.35, palm="front")
+    c.update(m(90), 0.6, palm="back")             # back of hand near the top is normal
+    assert c.update(m(35), 0.9, palm="back") == "counted"
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
 # ---------- calories + logging ----------

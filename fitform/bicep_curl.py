@@ -90,10 +90,12 @@ REASON_ORDER = ("hand_hidden", "fist", "palm_dir", "elbow", "wrist", "fast", "sl
 
 
 class BicepCurlCounter:
-    """Counts reps for one arm. A rep only counts if form stayed good for the whole rep:
-    it starts from a straight arm, the upper arm stays where it was, the wrist stays straight,
-    the hand is a fist, the palm faces the front at the bottom (standard curl), and the lift is
-    neither too fast nor too slow. Hand checks are strict: a hand that is not seen does not pass."""
+    """Counts reps for one arm.
+    1. Down position (arm straight, before the lift): the hand must be seen as a fist with the palm
+       facing forward (standard curl). This is the gate - a rep only counts if the start was good.
+    2. Lift: elbow movement, bent wrist, wrong hand or a hidden hand reject the rep only if they last
+       longer than FAULT_HOLD_SECONDS, so one-frame detection blips do not spoil a good rep.
+    3. Tempo: the lift must not be too fast or too slow."""
 
     def __init__(self, arm, alpha=config.SMOOTHING_ALPHA):
         self.arm = arm
@@ -109,11 +111,15 @@ class BicepCurlCounter:
         self.last_hand_summary = ""
         self._rep_start = None
         self._straight_since = None
+        self._straight_frames = 0
+        self._top_frames = 0
         self._last_seen = None
         self._smooth = {}
         self._base_vec = None      # upper-arm direction while the arm hangs straight
         self._reasons = set()
-        self._hand_log = []        # (time, hand state, palm direction, elbow angle) for the hand checks
+        self._start_checked = False
+        self._fault_since = {}
+        self._hand_log = []        # (time, hand state, palm direction, arm straight?)
         self.hand = None
         self.palm = None
         self.last = {}             # latest measurements + form flags, for display/feedback
@@ -131,29 +137,37 @@ class BicepCurlCounter:
         self._smooth[key] = value
         return round(value, 2)
 
-    def _hand_reasons(self):
-        """Strict hand checks over the start position + the lift. Returns a set of reason keys."""
-        since = (self._rep_start or 0) - config.HAND_WINDOW_BEFORE
-        window = [e for e in self._hand_log if e[0] >= since]
+    def _start_position_reasons(self, now):
+        """Checks the hand in the down position just before the lift. Returns a set of reason keys."""
+        since = (self._rep_start if self._rep_start is not None else now) - config.HAND_WINDOW_BEFORE
+        window = [e for e in self._hand_log if e[0] >= since and e[3]]
         reasons, notes = set(), []
         if config.FIST_CHECK:
             seen = [e[1] for e in window if e[1] in ("fist", "open", "partial")]
             fists = sum(1 for h in seen if h == "fist")
-            notes.append(f"fist {fists}/{len(seen)}")
+            notes.append(f"start fist {fists}/{len(seen)}")
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
             elif fists * 2 <= len(seen):
                 reasons.add("fist")
         if config.PALM_CHECK:
-            lower = [e[2] for e in window if e[2] in ("front", "back", "side") and e[3] > config.PALM_CHECK_ELBOW_MIN]
-            front = sum(1 for p in lower if p == "front")
-            notes.append(f"palm front {front}/{len(lower)}")
-            if len(lower) < config.HAND_MIN_READINGS:
+            seen = [e[2] for e in window if e[2] in ("front", "back", "side")]
+            front = sum(1 for p in seen if p == "front")
+            notes.append(f"start palm front {front}/{len(seen)}")
+            if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
-            elif front * 2 <= len(lower):
+            elif front < config.PALM_FRONT_MIN_RATIO * len(seen):
                 reasons.add("palm_dir")
         self.last_hand_summary = ", ".join(notes)
         return reasons
+
+    def _hold(self, key, on, now):
+        """True once fault `key` has been on continuously for longer than FAULT_HOLD_SECONDS."""
+        if not on:
+            self._fault_since.pop(key, None)
+            return False
+        since = self._fault_since.setdefault(key, now)
+        return now - since >= config.FAULT_HOLD_SECONDS
 
     def update(self, m, now, hand=None, palm=None):
         """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None) and the
@@ -169,32 +183,38 @@ class BicepCurlCounter:
         wrist = self._ema("wrist", m.get("wrist"))
         upper = self._ema("upper_vec", m.get("upper_vec"))
         self.hand, self.palm = hand, palm
-        self._hand_log.append((now, hand, palm, elbow))
+
+        straight_raw = elbow > config.DOWN_ANGLE
+        self._straight_frames = self._straight_frames + 1 if straight_raw else 0
+        straight = self._straight_frames >= config.STRAIGHT_CONFIRM_FRAMES
+        self._hand_log.append((now, hand, palm, straight_raw))
         keep = config.MAX_UP_SECONDS + config.HAND_WINDOW_BEFORE + 2.0
         while self._hand_log and now - self._hand_log[0][0] > keep:
             self._hand_log.pop(0)
 
-        straight = elbow > config.DOWN_ANGLE
         if straight:
             if self._straight_since is None:
                 self._straight_since = now
             if not self.ready and now - self._straight_since >= config.READY_HOLD_SECONDS:
                 self.ready = True
-        else:
+        elif not straight_raw:
             self._straight_since = None
 
         # Remember where the upper arm is while the arm is straight (start of each rep).
-        if upper is not None and straight:
+        if upper is not None and straight_raw:
             if self._base_vec is None or len(self._base_vec) != len(upper):
                 self._base_vec = list(upper)
             else:
                 self._base_vec = [0.8 * b + 0.2 * u for b, u in zip(self._base_vec, upper)]
         drift = vector_angle(upper, self._base_vec) if (upper is not None and self._base_vec is not None) else None
 
+        hand_checks = config.FIST_CHECK or config.PALM_CHECK
+        low = elbow > config.PALM_CHECK_ELBOW_MIN
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
         wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
         hand_open = config.FIST_CHECK and hand in ("open", "partial")
-        palm_away = config.PALM_CHECK and palm in ("back", "side") and elbow > config.PALM_CHECK_ELBOW_MIN
+        palm_away = config.PALM_CHECK and palm in ("back", "side") and low
+        hand_hidden = hand_checks and hand is None and palm is None and low
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
 
@@ -205,29 +225,34 @@ class BicepCurlCounter:
             self.form_ok = True
             self._rep_start = now
             self._reasons = set()
+            self._fault_since = {}
+            self._start_checked = False
             self.stage = "down"
 
-        if self.stage == "down" and not straight:
-            # form is judged while the arm is actually curling
-            if elbow_swinging:
-                self._reasons.add("elbow")
-            if wrist_bent:
-                self._reasons.add("wrist")
-            if elbow_swinging or wrist_bent:
+        if self.stage == "down" and not straight_raw:
+            if not self._start_checked:            # the moment the lift begins: was the start good?
+                self._reasons |= self._start_position_reasons(now)
+                self._start_checked = True
+            for key, on in (("elbow", elbow_swinging), ("wrist", wrist_bent), ("fist", hand_open),
+                            ("palm_dir", palm_away), ("hand_hidden", hand_hidden)):
+                if self._hold(key, on, now):
+                    self._reasons.add(key)
+            if self._reasons:
                 self.form_ok = False
 
-        if elbow < config.UP_ANGLE and self.stage == "down":
+        self._top_frames = self._top_frames + 1 if elbow < config.UP_ANGLE else 0
+        if self.stage == "down" and self._top_frames >= config.TOP_CONFIRM_FRAMES:
             self.stage = "up"
             self.attempted += 1
+            if not self._start_checked:
+                self._reasons |= self._start_position_reasons(now)
             up_time = now - self._rep_start if self._rep_start is not None else None
             self.last_up_time = up_time
-            self._reasons |= self._hand_reasons()
             if up_time is not None and up_time < config.MIN_UP_SECONDS:
                 self._reasons.add("fast")
             if up_time is not None and up_time > config.MAX_UP_SECONDS:
                 self._reasons.add("slow")
-            if self._reasons:
-                self.form_ok = False
+            self.form_ok = not self._reasons
             if self.form_ok:
                 self.count += 1
                 if up_time is not None:
