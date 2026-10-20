@@ -40,6 +40,14 @@ class FeedbackEngine:
                 meas3d = measure_from_world(world.landmark, arm) if world is not None else None
                 meas = meas3d if (meas3d is not None and config.USE_3D_ANGLES) else meas2d
                 meas = dict(meas)
+                # sizes in the picture for the elbow forward/back check (shoulder width = scale)
+                lm = landmarks.landmark
+                sw = ((lm[11].x - lm[12].x) * width) ** 2 + ((lm[11].y - lm[12].y) * height) ** 2
+                meas["shoulder_w"] = sw ** 0.5
+                sx, sy = pts["shoulder"]
+                ex, ey = pts["elbow"]
+                meas["upper_len"] = ((ex - sx) ** 2 + (ey - sy) ** 2) ** 0.5
+                meas["upper_vec2d"] = [ex - sx, ey - sy]
                 # Wrist straightness: forearm vs the middle knuckle from MediaPipe Hands. The pose model's
                 # "index" point folds into the palm when you make a fist, so it is not used for this.
                 hp = hand_points.get(arm)
@@ -86,6 +94,8 @@ class FeedbackEngine:
         # Otherwise the most urgent live problem on any visible arm.
         for check, text, color in (
             ("not_ready", "Hold your arm straight to start", ORANGE),
+            ("arm_tilted", "Keep your upper arm pointing down", RED),
+            ("arm_forward", "Keep your elbow by your side", RED),
             ("elbow_swinging", "Keep your elbow still", RED),
             ("hand_open", "Clench your fist", RED),
             ("palm_away", "Don't turn your hand outward", RED),

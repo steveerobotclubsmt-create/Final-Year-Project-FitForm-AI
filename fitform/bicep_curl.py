@@ -87,8 +87,10 @@ REASON_TEXT = {
     "fast": "too fast",
     "slow": "too slow",
     "not_lowered": "arm not straightened at the bottom",
+    "arm_tilt": "upper arm not pointing down",
+    "arm_forward": "elbow moved forward/back",
 }
-REASON_ORDER = ("hand_hidden", "fist", "palm_dir", "elbow", "wrist", "fast", "slow")
+REASON_ORDER = ("arm_tilt", "arm_forward", "elbow", "hand_hidden", "fist", "palm_dir", "wrist", "fast", "slow")
 
 
 class BicepCurlCounter:
@@ -123,6 +125,9 @@ class BicepCurlCounter:
         self._fault_since = {}
         self._hand_log = []        # (time, hand state, palm direction, elbow angle)
         self._rose_since_top = False   # arm went back down after the top without becoming straight
+        self._len_ref = None           # upper-arm length / shoulder width at the start of the rep
+        self._start_tilt = None
+        self._lift_palm = [0, 0]       # [good, bad] palm readings in the lower part of the lift
         self.hand = None
         self.palm = None
         self.last = {}             # latest measurements + form flags, for display/feedback
@@ -214,6 +219,22 @@ class BicepCurlCounter:
                 self._base_vec = [0.8 * b + 0.2 * u for b, u in zip(self._base_vec, upper)]
         drift = vector_angle(upper, self._base_vec) if (upper is not None and self._base_vec is not None) else None
 
+        # Upper arm must point down (2D picture, so this sees tilting to the side or up) ...
+        u2 = m.get("upper_vec2d") or (upper if (upper is not None and len(upper) == 2) else None)
+        tilt = vector_angle(u2, [0.0, 1.0]) if u2 is not None else None
+        # ... and must not swing forward/back: the camera then sees it shorter (relative to shoulder width).
+        len_ratio = None
+        if m.get("upper_len") and m.get("shoulder_w"):
+            r = m["upper_len"] / m["shoulder_w"]
+            if straight_raw:
+                self._len_ref = r if self._len_ref is None else 0.7 * self._len_ref + 0.3 * r
+            if self._len_ref:
+                len_ratio = r / self._len_ref
+        if straight_raw:
+            self._start_tilt = tilt
+
+        arm_tilted = tilt is not None and tilt > config.UPPER_ARM_MAX_TILT
+        arm_forward = len_ratio is not None and len_ratio < config.UPPER_ARM_MIN_LENGTH
         hand_checks = config.FIST_CHECK or config.PALM_CHECK
         low = elbow > config.PALM_CHECK_ELBOW_MIN
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
@@ -234,13 +255,19 @@ class BicepCurlCounter:
             self._fault_since = {}
             self._start_checked = False
             self._rose_since_top = False
+            self._lift_palm = [0, 0]
             self.stage = "down"
 
         if self.stage == "down" and not straight_raw:
             if not self._start_checked:            # the moment the lift begins: was the start good?
                 self._reasons |= self._start_position_reasons(now)
+                if self._start_tilt is not None and self._start_tilt > config.UPPER_ARM_MAX_TILT:
+                    self._reasons.add("arm_tilt")
                 self._start_checked = True
-            for key, on in (("elbow", elbow_swinging), ("wrist", wrist_bent), ("fist", hand_open),
+            if config.PALM_CHECK and low and palm in PALM_ALL and palm != "side":
+                self._lift_palm[1 if palm in PALM_BAD else 0] += 1
+            for key, on in (("elbow", elbow_swinging), ("arm_tilt", arm_tilted), ("arm_forward", arm_forward),
+                            ("wrist", wrist_bent), ("fist", hand_open),
                             ("palm_dir", palm_away), ("hand_hidden", hand_hidden)):
                 if self._hold(key, on, now):
                     self._reasons.add(key)
@@ -267,6 +294,9 @@ class BicepCurlCounter:
                 self._reasons |= self._start_position_reasons(now)
             up_time = now - self._rep_start if self._rep_start is not None else None
             self.last_up_time = up_time
+            good, bad = self._lift_palm
+            if bad >= 2 and bad >= config.PALM_BAD_MAX_RATIO * (good + bad):
+                self._reasons.add("palm_dir")      # hand kept turning the wrong way during the lift
             if up_time is not None and up_time < config.MIN_UP_SECONDS:
                 self._reasons.add("fast")
             if up_time is not None and up_time > config.MAX_UP_SECONDS:
@@ -285,6 +315,7 @@ class BicepCurlCounter:
             "elbow_angle": elbow, "drift": drift, "wrist_angle": wrist, "hand": hand, "palm": palm,
             "elbow_swinging": elbow_swinging, "wrist_bent": wrist_bent, "hand_open": hand_open,
             "palm_away": palm_away, "not_extended": not_extended, "not_ready": not self.ready,
+            "tilt": tilt, "len_ratio": len_ratio, "arm_tilted": arm_tilted, "arm_forward": arm_forward,
         }
         return event
 

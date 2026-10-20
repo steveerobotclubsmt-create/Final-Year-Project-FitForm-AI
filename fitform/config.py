@@ -23,6 +23,10 @@ REARM_ANGLE = 140            # after the first rep, the next rep starts once the
 UP_ANGLE = 60                # elbow angle below this = arm curled (top of rep); 2D full curl reads ~10-50
 EXTENSION_MIN_ANGLE = 140    # hint 'Extend arm fully!' when lowering stops short of this
 UPPER_ARM_DRIFT_MAX = 30     # upper arm may move this many degrees from its start position before 'elbow moved'
+UPPER_ARM_MAX_TILT = 30      # upper arm must point down: more than this many degrees from vertical = wrong
+UPPER_ARM_MIN_LENGTH = 0.8   # elbow forward/back: the upper arm looks shorter to a front camera; below this
+                             # share of its length at the start (measured against shoulder width) = wrong
+PALM_BAD_MAX_RATIO = 0.4     # during the lift, this share (or more) of wrong palm readings = rep not counted
 WRIST_STRAIGHT_MIN = 145     # elbow-wrist-knuckle angle below this = wrist bent (needs the hand to be seen)
 SMOOTHING_ALPHA = 0.6        # 1.0 = no smoothing; lower = smoother but slower to react
 USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct: 2D straight ~160-180, curled ~10-50;

@@ -90,7 +90,7 @@ def test_swinging_rep_rejected():
     c.update(m(170), 0.0)
     c.update(m(90, drift_deg=40), 0.5)            # upper arm swings forward 40 degrees
     assert c.update(m(30, drift_deg=40), 1.0) == "rejected"
-    assert c.count == 0 and c.attempted == 1 and c.last_reasons == ["elbow moved"]
+    assert c.count == 0 and c.attempted == 1 and "elbow moved" in c.last_reasons
     c.update(m(170), 2.0)
     assert c.update(m(30), 3.0) == "counted"
 
@@ -105,12 +105,42 @@ def test_failed_half_rep_does_not_block_next_rep():
     assert c.update(m(30), 2.0) == "counted"
 
 
-def test_side_raised_arm_is_not_a_false_swing():
-    """Arm held out to the side from the start (front view): the start position is the reference."""
+def test_upper_arm_raised_to_the_side_is_rejected():
+    """Upper arm must point down; curling with it held out to the side is not a bicep curl."""
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170, drift_deg=50), 0.0)
     c.update(m(90, drift_deg=55), 0.5)
-    assert c.update(m(30, drift_deg=55), 1.0) == "counted"
+    assert c.update(m(30, drift_deg=55), 1.0) == "rejected"
+    assert c.last_reasons[0] == "upper arm not pointing down"
+
+
+def test_elbow_moving_forward_is_rejected():
+    """Front camera: elbow coming forward makes the upper arm look shorter against the shoulder width."""
+    def mm(e, ratio):
+        d = m(e)
+        d["shoulder_w"], d["upper_len"] = 100.0, 85.0 * ratio
+        return d
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(mm(170, 1.0), 0.0)
+    c.update(mm(90, 0.6), 0.5)                    # elbow swung forward: upper arm looks 40 % shorter
+    assert c.update(mm(30, 0.6), 1.0) == "rejected"
+    assert c.last_reasons == ["elbow moved forward/back"]
+    c.update(mm(170, 1.0), 2.0)
+    c.update(mm(90, 0.97), 2.5)                   # normal curl: length hardly changes
+    assert c.update(mm(30, 0.97), 3.0) == "counted"
+
+
+def test_random_hand_turning_is_rejected():
+    """Turning the hand back and forth: no single wrong stretch is long, but many readings are wrong."""
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, palm="front")
+    for t, e, p in ((0.1, 138, "outward"), (0.2, 133, "front"), (0.3, 128, "back"),
+                    (0.4, 124, "inward"), (0.5, 118, "outward"), (0.6, 113, "front")):
+        c.update(m(e), t, palm=p)
+    assert c.update(m(35), 1.0, palm="back") == "rejected"
+    assert c.last_reasons == ["palm turned outward or backward"]
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
 def test_bent_wrist_rejected():
