@@ -46,20 +46,26 @@ class HandChecker:
         scores = {"right": None, "left": None}
         if pose_landmarks is not None and self.hand_landmarks:
             lm = pose_landmarks.landmark
+            # every (arm, hand) pair with its distance; then give each arm its nearest hand, one hand per arm
+            pairs = []
             for arm, wi in POSE_WRIST.items():
                 if lm[wi].visibility < 0.5:
                     continue
                 wx, wy = lm[wi].x * w, lm[wi].y * h
-                best, best_d = None, float("inf")
-                for hand in self.hand_landmarks:
+                for k, hand in enumerate(self.hand_landmarks):
                     d = math.hypot(hand.landmark[0].x * w - wx, hand.landmark[0].y * h - wy)
-                    if d < best_d:
-                        best, best_d = hand, d
-                if best is not None and best_d < config.HAND_MATCH_DIST * w:
-                    states[arm] = classify_hand(best.landmark, w, h)
-                    b = best.landmark
-                    points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
-                    palms[arm], scores[arm] = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE)
+                    if d < config.HAND_MATCH_DIST * w:
+                        pairs.append((d, arm, k))
+            used_arms, used_hands = set(), set()
+            for d, arm, k in sorted(pairs):
+                if arm in used_arms or k in used_hands:
+                    continue
+                used_arms.add(arm)
+                used_hands.add(k)
+                b = self.hand_landmarks[k].landmark
+                states[arm] = classify_hand(b, w, h)
+                points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
+                palms[arm], scores[arm] = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE)
         self.states = states
         self.points = points
         self.palms = palms

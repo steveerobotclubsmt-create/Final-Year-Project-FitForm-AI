@@ -15,6 +15,8 @@ import threading
 import time
 
 import cv2
+
+from . import config
 import numpy as np
 
 
@@ -81,6 +83,10 @@ class CameraStream:
         else:
             self.cap = cv2.VideoCapture(source)
             if not self.is_file:
+                if getattr(config, "CAPTURE_MJPG", False):
+                    self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                if getattr(config, "CAPTURE_FPS", None):
+                    self.cap.set(cv2.CAP_PROP_FPS, config.CAPTURE_FPS)
                 if width:
                     self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
                 if height:

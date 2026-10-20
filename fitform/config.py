@@ -3,15 +3,17 @@
 # ---- Camera ----
 CAMERA_INDEX = 0            # 0 = default webcam; try 1 if the wrong camera opens
                             # on the Pi, run with --camera picam to use the Pi Camera Module 2
-CAPTURE_WIDTH = 1280
-CAPTURE_HEIGHT = 720
-DISPLAY_WIDTH = 960          # each camera view is resized to this before display
-DISPLAY_HEIGHT = 540
+CAPTURE_WIDTH = 640          # 640x480 is plenty for pose detection and much faster than 1280x720 on the Pi
+CAPTURE_HEIGHT = 480
+CAPTURE_FPS = 30
+CAPTURE_MJPG = True          # ask a USB camera for MJPG (USB 2.0 cameras are often limited to ~5-10 fps raw)
+DISPLAY_WIDTH = 800          # processing + display size; keep the same 4:3 shape as the camera so angles are true
+DISPLAY_HEIGHT = 600
 
 # ---- MediaPipe Pose ----
 MIN_DETECTION_CONFIDENCE = 0.7
 MIN_TRACKING_CONFIDENCE = 0.7
-MODEL_COMPLEXITY = 1         # 0 = fastest (good for Pi 5), 1 = balanced, 2 = most accurate
+MODEL_COMPLEXITY = 0         # 0 = fastest (used on the Pi 5), 1 = balanced, 2 = most accurate
 LANDMARK_VISIBILITY_MIN = 0.6
 
 # ---- Bicep curl thresholds (degrees) ----
@@ -39,7 +41,8 @@ HAND_MIN_READINGS = 2        # hand must be seen in at least this many checked f
 PALM_CHECK_ELBOW_MIN = 110   # palm direction is judged only in the lower part of the rep (elbow above this angle)
 PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face the camera to count as 'front'
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
-HAND_EVERY_N = 1             # run hand detection every N frames (1 = every frame; 2 = faster but fewer readings)
+HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)
+PARALLEL_HANDS = True        # run hand detection at the same time as pose detection (uses a second CPU core)
 HAND_MODEL_COMPLEXITY = 0    # 0 = fastest
 HAND_MIN_CONFIDENCE = 0.5
 HAND_MATCH_DIST = 0.12       # hand must be within this fraction of the frame width of the pose wrist

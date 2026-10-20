@@ -78,6 +78,15 @@ def main():
     if config.FLASK_ENABLED and not args.no_server:
         start_server(logger)
 
+    pool = None
+    if hands and config.PARALLEL_HANDS:
+        from concurrent.futures import ThreadPoolExecutor
+        pool = ThreadPoolExecutor(max_workers=1)
+    prev_landmarks = None
+    cam_w = int(stream.cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    cam_h = int(stream.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    print(f"Camera {cam_w}x{cam_h}, processing {W}x{H}, pose model {config.MODEL_COMPLEXITY}, "
+          f"hands every {config.HAND_EVERY_N} frame(s){' in parallel' if pool else ''}")
     print("Starting... Press Q to quit, R to reset")
     last_id = -1
     last_dbg = 0.0
@@ -92,16 +101,25 @@ def main():
             last_id = frame_id
 
             now = time.time()
-            frame = cv2.resize(frame, (W, H))
-            landmarks = engine.process(frame)      # detect on the un-mirrored frame
+            if frame.shape[1] != W or frame.shape[0] != H:
+                frame = cv2.resize(frame, (W, H))
+            if hands and pool:
+                # hands run on a second core at the same time as pose; they are matched to the arms
+                # using the pose from the previous frame (the arm hardly moves in 1/15 s)
+                hand_job = pool.submit(hands.process, frame, prev_landmarks)
+                landmarks = engine.process(frame)  # detect on the un-mirrored frame
+                hand_states = hand_job.result()
+            else:
+                landmarks = engine.process(frame)
+                hand_states = hands.process(frame, landmarks) if hands else None
+            prev_landmarks = landmarks
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
-
-            hand_states = hands.process(frame, landmarks) if hands else None
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
                                             hand_points=hands.points if hands else None,
                                             palms=hands.palms if hands else None)
             if args.debug and now - last_dbg >= 0.5:
                 last_dbg = now
+                print(f"FPS {fps:.1f}")
                 for arm in drawn:
                     c = feedback.counters[arm]; d = c.last
                     fmt = lambda v: "-" if v is None else f"{v:.0f}"
@@ -153,6 +171,8 @@ def main():
         print_summary(summary)
         if summary["attempted_total"] > 0:
             logger.save(summary)
+        if pool:
+            pool.shutdown(wait=False)
         stream.stop()
         engine.close()
         if hands:
