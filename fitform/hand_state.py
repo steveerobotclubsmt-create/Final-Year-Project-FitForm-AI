@@ -30,44 +30,30 @@ PALM_ALL = PALM_GOOD + PALM_BAD + ("side",)
 
 
 def palm_direction(landmarks, arm, width=1.0, height=1.0, sign=1, min_score=0.35, inward_sign=1,
-                   bad_min_score=None, toward_mid=None):
+                   bad_min_score=None):
     """Which way the palm faces, from the 21 MediaPipe Hands landmarks of the un-mirrored image.
     The palm plane is spanned by wrist (0) -> index knuckle (5) and wrist -> little-finger knuckle (17);
     its normal (using MediaPipe's depth value z as well) gives two components:
       front  > 0: palm towards the camera      (< 0: back of the hand towards the camera)
       inward > 0: palm towards the body midline (< 0: palm turned outward, away from the body)
-    toward_mid: optional (x, z) direction from this arm's shoulder to the other shoulder (camera axes). With it,
-    'front' and 'inward' are measured against the body instead of the camera, so they stay right when the
-    person stands sideways. Without it the person is assumed to face the camera.
     Returns (label, front, inward) with label 'front' | 'inward' | 'outward' | 'back' | 'side'."""
     def v(k):
         return (landmarks[k].x * width - landmarks[0].x * width,
                 landmarks[k].y * height - landmarks[0].y * height,
                 (getattr(landmarks[k], "z", 0.0) - getattr(landmarks[0], "z", 0.0)) * width)
     i, p = v(5), v(17)
-    cx = i[1] * p[2] - i[2] * p[1]
-    cy = i[2] * p[0] - i[0] * p[2]
-    cz = i[0] * p[1] - i[1] * p[0]
-    # unit normal of the palm plane: its direction does not depend on how far apart the knuckles look,
-    # so a fist seen edge-on still gives a clear reading (the old |i||p| scaling made those look 'unclear')
-    n = math.sqrt(cx * cx + cy * cy + cz * cz)
+    n = math.sqrt(sum(c * c for c in i)) * math.sqrt(sum(c * c for c in p))
     if n == 0:
         return "side", 0.0, 0.0
+    cx = i[1] * p[2] - i[2] * p[1]
+    cz = i[0] * p[1] - i[1] * p[0]
     s_arm = -1 if arm == "right" else 1
-    # s_arm * (i x p) is the normal out of the BACK of the hand (MediaPipe z grows away from the camera);
-    # the palm normal is the opposite.
-    px, pz = -s_arm * cx / n, -s_arm * cz / n
-    if toward_mid is None:
-        # facing the camera: in the un-mirrored image the right arm is on the image left, so "towards the
-        # body" is +x for the right hand and -x for the left hand; "front" = towards the camera (-z)
-        toward_mid = (1.0, 0.0) if arm == "right" else (-1.0, 0.0)
-    lx, lz = toward_mid
-    ln = math.hypot(lx, lz) or 1.0
-    lx, lz = lx / ln, lz / ln
-    s_side = 1 if arm == "right" else -1
-    fx, fz = s_side * lz, -s_side * lx           # the way the person faces (perpendicular to the shoulders)
-    front = (px * fx + pz * fz) * sign
-    inward = (px * lx + pz * lz) * inward_sign
+    # s_arm * (i x p) is the normal out of the BACK of the hand (MediaPipe z grows away from the camera),
+    # so the back normal pointing away from the camera means the palm faces the camera.
+    front = s_arm * cz / n * sign
+    # palm normal = -(back normal). In the un-mirrored image the person's right arm is on the image left,
+    # so "towards the body" is +x for the right hand and -x for the left hand.
+    inward = -s_arm * cx / n * (1 if arm == "right" else -1) * inward_sign
     if max(abs(front), abs(inward)) < min_score:
         return "side", front, inward
     if abs(front) >= abs(inward):

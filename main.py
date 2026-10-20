@@ -127,7 +127,7 @@ def main():
                     lr = d.get('len_ratio')
                     print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} (2D {fmt(d.get('elbow2d'))} / "
                           f"3D {fmt(d.get('elbow3d'))}) drift {fmt(d['drift'])} tilt {fmt(d.get('tilt'))} "
-                          f"len {'side' if d.get('side_view') else ('-' if lr is None else f'{lr:.2f}')} wrist {fmt(d['wrist_angle'])} "
+                          f"len {'-' if lr is None else f'{lr:.2f}'} wrist {fmt(d['wrist_angle'])} "
                           f"hand {d['hand'] or '-'} palm {d.get('palm') or '-'}"
                           f"{'' if ps is None else f' (front {ps[0]:+.2f} inward {ps[1]:+.2f})'} stage {c.stage or '-'} ready {c.ready}")
             for arm, event in events:

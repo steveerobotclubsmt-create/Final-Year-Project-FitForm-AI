@@ -26,8 +26,6 @@ UPPER_ARM_DRIFT_MAX = 30     # upper arm may move this many degrees from its sta
 UPPER_ARM_MAX_TILT = 30      # upper arm must point down: more than this many degrees from vertical = wrong
 UPPER_ARM_MIN_LENGTH = 0.8   # elbow forward/back: the upper arm looks shorter to a front camera; below this
                              # share of its length at the start (measured against shoulder width) = wrong
-SIDE_VIEW_RATIO = 0.45       # shoulder width / torso length below this = standing sideways to the camera
-                             # (then the forward/back check is skipped; the upper-arm tilt check covers it)
 PALM_BAD_MAX_RATIO = 0.4     # down position + lower part of the lift: this share (or more) of wrong palm
                              # readings = rep not counted ('side' / unclear readings are not counted either way)
 PALM_BAD_MIN_READINGS = 2    # ... and at least this many wrong readings
@@ -57,8 +55,6 @@ PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face forward/inwar
 PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else it is read as 'side' (unclear);
                              # a fist seen from the front gives noisy palm readings, so weak 'wrong' ones are ignored
 PALM_HOLD_SECONDS = 0.5      # hand turned outward/backward continuously this long during the lift = not counted
-PALM_CALIB_FILE = "~/palm_calib.csv"   # from tools/palm_calibrate.py; used for the palm direction when present
-PALM_CALIB_MARGIN = 0.5      # readings about equally close to a good and a wrong position are 'unclear'
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
 HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)

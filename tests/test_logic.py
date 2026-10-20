@@ -405,56 +405,15 @@ def test_unclear_palm_readings_do_not_fail_a_good_rep():
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
-def test_edge_on_fist_turned_outward_is_clear():
-    """Fist seen edge-on (knuckles look close together): the direction must still be read, not 'unclear'."""
-    for zsep in (0.005, 0.01, 0.02):
-        pts = [P(0.5, 0.5) for _ in range(21)]
-        pts[5], pts[17] = P(0.503, 0.56, zsep), P(0.497, 0.555, -zsep)     # little-finger knuckle nearer
-        assert palm_direction(pts, "right", 640, 480, bad_min_score=0.55)[0] == "outward"
-        pts[5], pts[17] = P(0.503, 0.56, -zsep), P(0.497, 0.555, zsep)     # index knuckle nearer
-        assert palm_direction(pts, "right", 640, 480, bad_min_score=0.55)[0] == "inward"
-
-
-def test_hand_pointing_at_camera_is_unclear():
-    """Palm facing up (forearm level, fingers towards the camera): neither front nor inward."""
-    pts = [P(0.5, 0.5) for _ in range(21)]
-    pts[5], pts[17] = P(0.48, 0.5, -0.1), P(0.52, 0.5, -0.1)
-    assert palm_direction(pts, "right", bad_min_score=0.55)[0] == "side"
-
-
-def test_palm_direction_when_standing_sideways():
-    """Right side to the camera (person faces image-right): the other shoulder is further away (+z)."""
-    mid = (0.0, 1.0)
-    # palm facing the thigh = palm away from the camera (+z) -> inward (allowed)
-    pts = [P(0.5, 0.5) for _ in range(21)]
-    pts[5], pts[17] = P(0.505, 0.56, 0.0), P(0.495, 0.555, 0.0)           # edge-on in x, palm normal along z
-    lab = palm_direction(pts, "right", toward_mid=mid)[0]
-    pts2 = [P(0.5, 0.5) for _ in range(21)]
-    pts2[5], pts2[17] = P(0.495, 0.56, 0.0), P(0.505, 0.555, 0.0)
-    lab2 = palm_direction(pts2, "right", toward_mid=mid)[0]
-    assert {lab, lab2} == {"inward", "outward"}                         # depth axis now = inward/outward
-    # palm facing where the person faces (image right, +x) -> front
-    pts3 = [P(0.5, 0.5) for _ in range(21)]
-    pts3[5], pts3[17] = P(0.5, 0.56, -0.01), P(0.5, 0.555, 0.01)
-    pts4 = [P(0.5, 0.5) for _ in range(21)]
-    pts4[5], pts4[17] = P(0.5, 0.56, 0.01), P(0.5, 0.555, -0.01)
-    labs = {palm_direction(pts3, "right", toward_mid=mid)[0], palm_direction(pts4, "right", toward_mid=mid)[0]}
-    assert labs == {"front", "back"}
-    # same hands with the default (facing the camera) give the camera-based labels
-    assert palm_direction(pts, "right")[0] in ("front", "back")
-
-
-def test_side_view_skips_the_forward_check():
-    """Sideways, shoulder width collapses; that must not be read as the elbow moving forward."""
-    def mm(e, ratio, side):
-        d = m(e)
-        d["shoulder_w"], d["upper_len"], d["side_view"] = 100.0, 85.0 * ratio, side
-        return d
-    c = BicepCurlCounter("right", alpha=1.0)
-    c.update(mm(170, 1.0, False), 0.0)
-    c.update(mm(170, 3.0, True), 0.5)             # turned sideways: shoulders overlap
-    c.update(mm(90, 3.0, True), 1.0)
-    assert c.update(mm(30, 3.0, True), 1.5) == "counted"
+def test_weak_wrong_palm_reading_is_unclear():
+    pts = palm_hand("right", "back")
+    pts[5].x, pts[17].x = 0.505, 0.495                        # nearly edge-on: weak 'back' reading
+    pts[5].z = pts[17].z = 0.0
+    label, front, inward = palm_direction(pts, "right", bad_min_score=0.55)
+    assert label in ("back", "side")
+    if abs(front) < 0.55:
+        assert label == "side"
+    assert palm_direction(palm_hand("right", "back"), "right", bad_min_score=0.55)[0] == "back"
 
 
 def test_idle_arm_does_not_hide_the_active_arm_message():
@@ -465,24 +424,6 @@ def test_idle_arm_does_not_hide_the_active_arm_message():
     f.counters["left"].last = {"not_ready": True}             # left hand holding the phone
     f._set_message(["right", "left"])
     assert f.message == "RIGHT: Clench your fist"
-
-
-def test_palm_calibration_classifier():
-    """Nearest recorded position, robust to a few readings taken in the wrong position."""
-    from fitform import palm_calib as pc
-    import random
-    med = {"inward": (-0.85, 0.5, 0.57, 0.47, -0.42, 0.40), "front": (0.9, 0.42, -0.13, 0.46, 0.73, 0.25),
-           "outward": (0.94, 0.0, -0.54, 0.04, 0.63, -0.2), "back": (-0.77, 0.46, 0.68, 0.12, -0.67, 0.45)}
-    rnd = random.Random(1)
-    rows = []
-    for c, m_ in med.items():
-        for _ in range(40):
-            rows.append({"pos": c, **{f: v + rnd.gauss(0, 0.1) for f, v in zip(pc.FEATURES, m_)}})
-        rows.append({"pos": c, **dict(zip(pc.FEATURES, med["front" if c != "front" else "back"]))})  # a wrong one
-    model = pc.fit(rows)
-    for c, m_ in med.items():
-        assert pc.classify(model, dict(zip(pc.FEATURES, m_)))[0] == c
-    assert pc.fit([r for r in rows if r["pos"] != "back"]) is None      # a position missing
 
 
 # ---------- back-to-back reps ----------

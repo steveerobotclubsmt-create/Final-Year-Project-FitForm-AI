@@ -44,12 +44,6 @@ class FeedbackEngine:
                 lm = landmarks.landmark
                 sw = ((lm[11].x - lm[12].x) * width) ** 2 + ((lm[11].y - lm[12].y) * height) ** 2
                 meas["shoulder_w"] = sw ** 0.5
-                # standing sideways: the shoulders overlap in the picture, so shoulder width is no use as a
-                # scale; the elbow moving forward/back then shows directly as the upper arm tilting instead
-                tx = ((lm[11].x + lm[12].x) - (lm[23].x + lm[24].x)) / 2 * width
-                ty = ((lm[11].y + lm[12].y) - (lm[23].y + lm[24].y)) / 2 * height
-                torso = (tx * tx + ty * ty) ** 0.5
-                meas["side_view"] = torso > 0 and meas["shoulder_w"] / torso < config.SIDE_VIEW_RATIO
                 sx, sy = pts["shoulder"]
                 ex, ey = pts["elbow"]
                 meas["upper_len"] = ((ex - sx) ** 2 + (ey - sy) ** 2) ** 0.5

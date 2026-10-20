@@ -61,7 +61,7 @@ def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
             col = {"fist": GREEN, "open": RED, "partial": RED}.get(counter.hand, (120, 120, 120))
             cv2.putText(image, "FIST", (x + 95, 118), FONT, 0.5, col, 2)
         if config.PALM_CHECK:
-            col = {"front": GREEN, "inward": GREEN, "back": RED, "outward": RED}.get(counter.palm, (120, 120, 120))
+            col = {"front": GREEN, "back": RED, "side": RED}.get(counter.palm, (120, 120, 120))
             cv2.putText(image, "PALM", (x + 95, 140), FONT, 0.5, col, 2)
 
     mins, secs = divmod(int(elapsed_s), 60)

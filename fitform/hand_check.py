@@ -7,7 +7,6 @@ import cv2
 
 from . import config
 from .hand_state import classify_hand, palm_direction
-from . import palm_calib
 
 POSE_WRIST = {"right": 16, "left": 15}
 
@@ -29,9 +28,6 @@ class HandChecker:
         self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
         self.palm_scores = {"right": None, "left": None}   # (front, inward), each -1..1
         self.hand_landmarks = []
-        self.calib = palm_calib.load(config.PALM_CALIB_FILE) if config.PALM_CALIB_FILE else None
-        self.raw = {"right": None, "left": None}      # the matched hand's 21 landmarks (for tools/palm_calibrate.py)
-        self.handed = {"right": None, "left": None}   # MediaPipe's own left/right guess for that hand: (label, score)
 
     def process(self, frame_bgr, pose_landmarks):
         """frame_bgr: the same un-mirrored frame given to PoseEngine.
@@ -48,9 +44,6 @@ class HandChecker:
         points = {"right": None, "left": None}
         palms = {"right": None, "left": None}
         scores = {"right": None, "left": None}
-        raw = {"right": None, "left": None}
-        handed = {"right": None, "left": None}
-        multi_handed = result.multi_handedness or []
         if pose_landmarks is not None and self.hand_landmarks:
             lm = pose_landmarks.landmark
             # every (arm, hand) pair with its distance; then give each arm its nearest hand, one hand per arm
@@ -72,26 +65,13 @@ class HandChecker:
                 b = self.hand_landmarks[k].landmark
                 states[arm] = classify_hand(b, w, h)
                 points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
-                # shoulder line from the pose (x and depth) so palm directions follow the body when sideways
-                me, other = (lm[12], lm[11]) if arm == "right" else (lm[11], lm[12])
-                toward_mid = ((other.x - me.x) * w, (other.z - me.z) * w)
                 label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
-                                                      config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE,
-                                                      toward_mid)
-                if self.calib is not None:            # per-user calibration knows how YOUR fist reads
-                    feats = palm_calib.hand_features(b, arm, w, h, front, inward)
-                    label = palm_calib.classify(self.calib, feats, config.PALM_CALIB_MARGIN)[0]
+                                                      config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE)
                 palms[arm], scores[arm] = label, (front, inward)
-                raw[arm] = b
-                if k < len(multi_handed):
-                    cl = multi_handed[k].classification[0]
-                    handed[arm] = (cl.label, cl.score)
         self.states = states
         self.points = points
         self.palms = palms
         self.palm_scores = scores
-        self.raw = raw
-        self.handed = handed
         return states
 
     def close(self):
