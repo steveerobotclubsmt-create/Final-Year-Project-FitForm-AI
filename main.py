@@ -6,6 +6,7 @@ Examples:
   python main.py --camera picam       # Raspberry Pi Camera Module (via rpicam-vid)
   python main.py --video test.mp4     # run on a recorded video instead of a camera
   python main.py --weight 65          # set body weight for the calorie estimate
+  python main.py --debug --angles 2d  # print live angles; compare 2D and 3D elbow angles
 """
 
 import argparse
@@ -36,6 +37,7 @@ def parse_args():
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
     p.add_argument("--no-fist", action="store_true", help="turn off the clenched-fist check")
     p.add_argument("--debug", action="store_true", help="show live angles on screen and print them for tuning")
+    p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
     return p.parse_args()
 
 
@@ -60,6 +62,10 @@ def main():
     feedback = FeedbackEngine()
     if args.no_fist:
         config.FIST_CHECK = False
+    if args.angles:
+        config.USE_3D_ANGLES = args.angles == "3d"
+    print(f"Angles: {'3D' if config.USE_3D_ANGLES else '2D'} | straight above {config.DOWN_ANGLE} | "
+          f"curled below {config.UP_ANGLE} | fist check {'on' if config.FIST_CHECK else 'off'}")
     hands = HandChecker() if config.FIST_CHECK else None
     calories = CalorieTracker(weight_kg=args.weight)
     gpio = GPIOFeedback(enabled=not args.no_gpio and config.GPIO_ENABLED)
@@ -93,8 +99,9 @@ def main():
                 for arm in drawn:
                     c = feedback.counters[arm]; d = c.last
                     fmt = lambda v: "-" if v is None else f"{v:.0f}"
-                    print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} drift {fmt(d['drift'])} "
-                          f"wrist {fmt(d['wrist_angle'])} hand {d['hand'] or '-'} stage {c.stage or '-'} form_ok {c.form_ok}")
+                    print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} (2D {fmt(d.get('elbow2d'))} / "
+                          f"3D {fmt(d.get('elbow3d'))}) drift {fmt(d['drift'])} wrist {fmt(d['wrist_angle'])} "
+                          f"hand {d['hand'] or '-'} stage {c.stage or '-'} form_ok {c.form_ok}")
             for arm, event in events:
                 if event == "counted":
                     calories.on_rep(now)

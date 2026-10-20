@@ -22,6 +22,7 @@ UPPER_ARM_DRIFT_MAX = 25     # upper arm may move this many degrees from its sta
 WRIST_STRAIGHT_MIN = 145     # elbow-wrist-knuckle angle below this = wrist bent (needs the hand to be seen)
 SMOOTHING_ALPHA = 0.6        # 1.0 = no smoothing; lower = smoother but slower to react
 USE_3D_ANGLES = True         # use MediaPipe 3D world landmarks (works from the front or the side)
+                             # override at run time with --angles 2d / --angles 3d
 
 # ---- Hand / fist check (MediaPipe Hands) ----
 FIST_CHECK = True            # a rep only counts if the hand is a fist (holding the dumbbell)

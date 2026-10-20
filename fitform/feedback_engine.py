@@ -34,10 +34,10 @@ class FeedbackEngine:
                     if min(lm[idx["shoulder"]].visibility, lm[idx["elbow"]].visibility) > config.LANDMARK_VISIBILITY_MIN:
                         partly_visible = True     # arm seen but the hand/wrist is out of view
                     continue
-                if world is not None and config.USE_3D_ANGLES:
-                    meas = measure_from_world(world.landmark, arm)
-                else:
-                    meas = measure_from_points(pts)
+                meas2d = measure_from_points(pts)
+                meas3d = measure_from_world(world.landmark, arm) if world is not None else None
+                meas = meas3d if (meas3d is not None and config.USE_3D_ANGLES) else meas2d
+                meas = dict(meas)
                 # Wrist straightness: forearm vs the middle knuckle from MediaPipe Hands. The pose model's
                 # "index" point folds into the palm when you make a fist, so it is not used for this.
                 hp = hand_points.get(arm)
@@ -48,6 +48,9 @@ class FeedbackEngine:
                 else:
                     meas["wrist"] = None
                 event = self.counters[arm].update(meas, now, hands.get(arm))
+                # both angle versions, so --debug can show which one matches the real arm
+                self.counters[arm].last["elbow2d"] = meas2d["elbow"]
+                self.counters[arm].last["elbow3d"] = meas3d["elbow"] if meas3d is not None else None
                 if event:
                     events.append((arm, event))
                 drawn[arm] = pts

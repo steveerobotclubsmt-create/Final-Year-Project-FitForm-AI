@@ -33,7 +33,8 @@ def draw_debug(image, feedback):
             continue
         def fmt(v):
             return "-" if v is None else f"{v:.0f}"
-        txt = (f"{arm[0].upper()}: elbow {fmt(d.get('elbow_angle'))}  drift {fmt(d.get('drift'))}  "
+        txt = (f"{arm[0].upper()}: elbow {fmt(d.get('elbow_angle'))} (2D {fmt(d.get('elbow2d'))}/3D {fmt(d.get('elbow3d'))})  "
+               f"drift {fmt(d.get('drift'))}  "
                f"wrist {fmt(d.get('wrist_angle'))}  hand {d.get('hand') or '-'}  stage {c.stage or '-'}")
         cv2.rectangle(image, (0, y - 20), (w, y + 6), (0, 0, 0), -1)
         cv2.putText(image, txt, (8, y), FONT, 0.55, YELLOW, 1)
