@@ -91,7 +91,11 @@ class FeedbackEngine:
                 why = c.last_reasons[0] if c.last_reasons else "check your form"
                 self.message, self.message_color = f"{arm.upper()}: Not counted - {why}", RED
             return
-        # Otherwise the most urgent live problem on any visible arm.
+        # Otherwise the most urgent live problem on any visible arm. An arm that has not started (for
+        # example holding the phone) is ignored while the other arm is exercising.
+        active = [a for a in seen_arms if self.counters[a].ready]
+        if active:
+            seen_arms = active
         for check, text, color in (
             ("not_ready", "Hold your arm straight to start", ORANGE),
             ("arm_tilted", "Keep your upper arm pointing down", RED),

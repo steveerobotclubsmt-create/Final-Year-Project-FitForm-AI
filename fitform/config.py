@@ -26,7 +26,9 @@ UPPER_ARM_DRIFT_MAX = 30     # upper arm may move this many degrees from its sta
 UPPER_ARM_MAX_TILT = 30      # upper arm must point down: more than this many degrees from vertical = wrong
 UPPER_ARM_MIN_LENGTH = 0.8   # elbow forward/back: the upper arm looks shorter to a front camera; below this
                              # share of its length at the start (measured against shoulder width) = wrong
-PALM_BAD_MAX_RATIO = 0.4     # during the lift, this share (or more) of wrong palm readings = rep not counted
+PALM_BAD_MAX_RATIO = 0.4     # down position + lower part of the lift: this share (or more) of wrong palm
+                             # readings = rep not counted ('side' / unclear readings are not counted either way)
+PALM_BAD_MIN_READINGS = 2    # ... and at least this many wrong readings
 WRIST_STRAIGHT_MIN = 145     # elbow-wrist-knuckle angle below this = wrist bent (needs the hand to be seen)
 SMOOTHING_ALPHA = 0.6        # 1.0 = no smoothing; lower = smoother but slower to react
 USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct: 2D straight ~160-180, curled ~10-50;
@@ -48,9 +50,11 @@ FIST_CHECK = True            # hand must be a clenched fist (or wrapped round a 
 PALM_CHECK = True            # palm must face forward or towards the body; outward or backward fails
 HAND_WINDOW_BEFORE = 1.0     # the down (start) position: last N seconds with the arm straight before the lift
 HAND_MIN_READINGS = 2        # hand must be seen this many times in the down position, else "hand not visible"
-PALM_FRONT_MIN_RATIO = 0.5   # in the down position at least this share of palm readings must be forward/inward
 PALM_CHECK_ELBOW_MIN = 110   # palm direction is judged only in the lower part of the rep (elbow above this angle)
-PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face a direction to be read (else 'side')
+PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face forward/inward to be read as good (else 'side')
+PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else it is read as 'side' (unclear);
+                             # a fist seen from the front gives noisy palm readings, so weak 'wrong' ones are ignored
+PALM_HOLD_SECONDS = 0.5      # hand turned outward/backward continuously this long during the lift = not counted
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
 HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)

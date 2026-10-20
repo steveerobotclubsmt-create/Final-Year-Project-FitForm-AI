@@ -66,7 +66,7 @@ class HandChecker:
                 states[arm] = classify_hand(b, w, h)
                 points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
                 label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
-                                                      config.PALM_INWARD_SIGN)
+                                                      config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE)
                 palms[arm], scores[arm] = label, (front, inward)
         self.states = states
         self.points = points

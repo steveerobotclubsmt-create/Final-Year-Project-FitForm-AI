@@ -393,6 +393,39 @@ def test_one_bad_palm_reading_is_ignored():
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
+def test_unclear_palm_readings_do_not_fail_a_good_rep():
+    """Fist seen from the front: many readings are 'side' (direction unclear). They must not count as wrong."""
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    for t, p in ((0.0, "side"), (0.1, "front"), (0.2, "side"), (0.3, "side"), (0.4, "inward")):
+        c.update(m(170), t, palm=p)
+    c.update(m(130), 0.6, palm="side")
+    c.update(m(90), 0.8, palm="back")
+    assert c.update(m(35), 1.0, palm="side") == "counted"
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_weak_wrong_palm_reading_is_unclear():
+    pts = palm_hand("right", "back")
+    pts[5].x, pts[17].x = 0.505, 0.495                        # nearly edge-on: weak 'back' reading
+    pts[5].z = pts[17].z = 0.0
+    label, front, inward = palm_direction(pts, "right", bad_min_score=0.55)
+    assert label in ("back", "side")
+    if abs(front) < 0.55:
+        assert label == "side"
+    assert palm_direction(palm_hand("right", "back"), "right", bad_min_score=0.55)[0] == "back"
+
+
+def test_idle_arm_does_not_hide_the_active_arm_message():
+    from fitform.feedback_engine import FeedbackEngine
+    f = FeedbackEngine()
+    f.counters["right"].ready = True
+    f.counters["right"].last = {"hand_open": True}
+    f.counters["left"].last = {"not_ready": True}             # left hand holding the phone
+    f._set_message(["right", "left"])
+    assert f.message == "RIGHT: Clench your fist"
+
+
 # ---------- back-to-back reps ----------
 def test_second_rep_counts_when_arm_only_lowered_to_about_145():
     """Doing reps back to back the arm often only comes down to ~140-150 degrees."""

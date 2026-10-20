@@ -127,7 +127,7 @@ class BicepCurlCounter:
         self._rose_since_top = False   # arm went back down after the top without becoming straight
         self._len_ref = None           # upper-arm length / shoulder width at the start of the rep
         self._start_tilt = None
-        self._lift_palm = [0, 0]       # [good, bad] palm readings in the lower part of the lift
+        self._lift_palm = [0, 0]       # [good, bad] palm readings: down position + lower part of the lift
         self.hand = None
         self.palm = None
         self.last = {}             # latest measurements + form flags, for display/feedback
@@ -161,23 +161,23 @@ class BicepCurlCounter:
             elif fists * 2 <= len(seen):
                 reasons.add("fist")
         if config.PALM_CHECK:
-            seen = [e[2] for e in window if e[2] in PALM_ALL]
-            front = sum(1 for p in seen if p in PALM_GOOD)
-            notes.append(f"start palm ok {front}/{len(seen)}")
+            seen = [e[2] for e in window if e[2] in PALM_ALL]      # 'side' = hand seen, direction unclear
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
-            elif front < config.PALM_FRONT_MIN_RATIO * len(seen):
-                reasons.add("palm_dir")
+            # the down-position readings start the palm vote; the lower part of the lift adds to it and
+            # the decision is made once at the top (one vote, so a few noisy readings cannot fail the rep)
+            self._lift_palm = [sum(1 for p in seen if p in PALM_GOOD), sum(1 for p in seen if p in PALM_BAD)]
         self.last_hand_summary = ", ".join(notes)
         return reasons
 
     def _hold(self, key, on, now):
-        """True once fault `key` has been on continuously for longer than FAULT_HOLD_SECONDS."""
+        """True once fault `key` has been on continuously for longer than its hold time."""
         if not on:
             self._fault_since.pop(key, None)
             return False
         since = self._fault_since.setdefault(key, now)
-        return now - since >= config.FAULT_HOLD_SECONDS
+        hold = config.PALM_HOLD_SECONDS if key == "palm_dir" else config.FAULT_HOLD_SECONDS
+        return now - since >= hold
 
     def update(self, m, now, hand=None, palm=None):
         """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None) and the
@@ -264,8 +264,8 @@ class BicepCurlCounter:
                 if self._start_tilt is not None and self._start_tilt > config.UPPER_ARM_MAX_TILT:
                     self._reasons.add("arm_tilt")
                 self._start_checked = True
-            if config.PALM_CHECK and low and palm in PALM_ALL and palm != "side":
-                self._lift_palm[1 if palm in PALM_BAD else 0] += 1
+            elif config.PALM_CHECK and low and palm in PALM_ALL and palm != "side":
+                self._lift_palm[1 if palm in PALM_BAD else 0] += 1   # (this frame is already in the start vote)
             for key, on in (("elbow", elbow_swinging), ("arm_tilt", arm_tilted), ("arm_forward", arm_forward),
                             ("wrist", wrist_bent), ("fist", hand_open),
                             ("palm_dir", palm_away), ("hand_hidden", hand_hidden)):
@@ -295,8 +295,11 @@ class BicepCurlCounter:
             up_time = now - self._rep_start if self._rep_start is not None else None
             self.last_up_time = up_time
             good, bad = self._lift_palm
-            if bad >= 2 and bad >= config.PALM_BAD_MAX_RATIO * (good + bad):
-                self._reasons.add("palm_dir")      # hand kept turning the wrong way during the lift
+            if config.PALM_CHECK:
+                note = f"palm ok {good}/{good + bad}"
+                self.last_hand_summary = f"{self.last_hand_summary}, {note}" if self.last_hand_summary else note
+                if bad >= config.PALM_BAD_MIN_READINGS and bad >= config.PALM_BAD_MAX_RATIO * (good + bad):
+                    self._reasons.add("palm_dir")  # hand mostly turned the wrong way in the lower part
             if up_time is not None and up_time < config.MIN_UP_SECONDS:
                 self._reasons.add("fast")
             if up_time is not None and up_time > config.MAX_UP_SECONDS:

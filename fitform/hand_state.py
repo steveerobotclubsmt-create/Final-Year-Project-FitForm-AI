@@ -29,7 +29,8 @@ PALM_BAD = ("outward", "back")         # hand turned away from the body, or reve
 PALM_ALL = PALM_GOOD + PALM_BAD + ("side",)
 
 
-def palm_direction(landmarks, arm, width=1.0, height=1.0, sign=1, min_score=0.35, inward_sign=1):
+def palm_direction(landmarks, arm, width=1.0, height=1.0, sign=1, min_score=0.35, inward_sign=1,
+                   bad_min_score=None):
     """Which way the palm faces, from the 21 MediaPipe Hands landmarks of the un-mirrored image.
     The palm plane is spanned by wrist (0) -> index knuckle (5) and wrist -> little-finger knuckle (17);
     its normal (using MediaPipe's depth value z as well) gives two components:
@@ -56,5 +57,10 @@ def palm_direction(landmarks, arm, width=1.0, height=1.0, sign=1, min_score=0.35
     if max(abs(front), abs(inward)) < min_score:
         return "side", front, inward
     if abs(front) >= abs(inward):
-        return ("front" if front > 0 else "back"), front, inward
-    return ("inward" if inward > 0 else "outward"), front, inward
+        label, score = ("front" if front > 0 else "back"), abs(front)
+    else:
+        label, score = ("inward" if inward > 0 else "outward"), abs(inward)
+    # a wrong direction must be clear before it counts against the rep; weak ones are 'side' (unclear)
+    if label in PALM_BAD and bad_min_score is not None and score < bad_min_score:
+        return "side", front, inward
+    return label, front, inward
