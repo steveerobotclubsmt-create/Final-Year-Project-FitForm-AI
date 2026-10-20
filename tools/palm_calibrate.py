@@ -22,6 +22,7 @@ from fitform import config                     # noqa: E402
 from fitform.camera_thread import CameraStream  # noqa: E402
 from fitform.hand_check import HandChecker      # noqa: E402
 from fitform.pose_engine import PoseEngine      # noqa: E402
+from fitform import palm_calib                  # noqa: E402
 
 POSITIONS = [
     ("inward", "Fist, palm facing your BODY (thigh)"),
@@ -31,23 +32,7 @@ POSITIONS = [
     ("inward2", "AGAIN: fist, palm facing your BODY"),
     ("outward2", "AGAIN: fist turned OUTWARD"),
 ]
-FEATURES = ["front", "inward", "thumb_depth", "thumb_side", "knuckle_side", "pinky_depth", "handed_match"]
-
-
-def features(b, arm, pose_lm, w, h):
-    """Several candidate cues from the 21 hand landmarks (un-mirrored image)."""
-    to_mid = 1.0 if arm == "right" else -1.0              # +x is towards the body for the right arm
-    size = math.hypot((b[9].x - b[0].x) * w, (b[9].y - b[0].y) * h) or 1.0
-    return {
-        # depth of thumb tip vs little-finger knuckle (negative = thumb nearer the camera)
-        "thumb_depth": (b[4].z - b[17].z) * w / size,
-        # 2D: thumb tip left/right of the little-finger knuckle (positive = thumb towards the body)
-        "thumb_side": (b[4].x - b[17].x) * w * to_mid / size,
-        # 2D: index knuckle left/right of the little-finger knuckle (positive = towards the body)
-        "knuckle_side": (b[5].x - b[17].x) * w * to_mid / size,
-        # depth of the index knuckle vs little-finger knuckle (negative = index side nearer)
-        "pinky_depth": (b[5].z - b[17].z) * w / size,
-    }
+FEATURES = list(palm_calib.FEATURES) + ["handed_match"]
 
 
 def main():
@@ -55,7 +40,12 @@ def main():
     ap.add_argument("--camera", default="0")
     ap.add_argument("--arm", default="right", choices=["right", "left"])
     ap.add_argument("--seconds", type=float, default=5.0)
+    ap.add_argument("--check", action="store_true", help="only re-check the saved ~/palm_calib.csv")
     args = ap.parse_args()
+    out = os.path.expanduser("~/palm_calib.csv")
+    if args.check:
+        report(out)
+        return
     src = "picam" if args.camera == "picam" else int(args.camera)
     stream = CameraStream(src, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT)
     if not stream.is_opened():
@@ -81,8 +71,8 @@ def main():
                     hands.process(frame, lm)
                     b = hands.raw.get(args.arm)
                     if phase == "HOLD" and b is not None and lm is not None:
-                        f = features(b, args.arm, lm.landmark, W, H)
                         sc = hands.palm_scores.get(args.arm) or (None, None)
+                        f = palm_calib.hand_features(b, args.arm, W, H, sc[0], sc[1])
                         hd = hands.handed.get(args.arm)
                         f.update({"pos": key, "front": sc[0], "inward": sc[1],
                                   "label": hands.palms.get(args.arm), "fist": hands.states.get(args.arm),
@@ -108,7 +98,6 @@ def main():
         stream.stop()
         cv2.destroyAllWindows()
 
-    out = os.path.expanduser("~/palm_calib.csv")
     cols = ["pos", "label", "fist", "handed"] + FEATURES
     with open(out, "w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
@@ -129,6 +118,26 @@ def main():
         for r in sel:
             labs[r["label"]] = labs.get(r["label"], 0) + 1
         print(f"{key:9} {len(sel):3d}  " + "  ".join(med) + "   " + " ".join(f"{k}:{v}" for k, v in labs.items()))
+
+    report(out)
+
+
+def report(path):
+    """How each recorded reading is classified by the calibration (rows = what you held)."""
+    rows = palm_calib.read_rows(path)
+    model, table = palm_calib.check(rows, config.PALM_CALIB_MARGIN)
+    if model is None:
+        print("\ncalibration incomplete: every position needs at least 3 readings - run it again")
+        return
+    cls = list(palm_calib.CLASSES) + ["side"]
+    print("\nCHECK  (rows = position you held, columns = what the palm check would say)")
+    print("held        " + "".join(f"{c:>9}" for c in cls) + "   correct")
+    for held in palm_calib.CLASSES:
+        t = table.get(held, {})
+        n = sum(t.values()) or 1
+        ok = sum(v for k, v in t.items() if (k in palm_calib.GOOD) == (held in palm_calib.GOOD) and k != "side")
+        print(f"{held:10}  " + "".join(f"{t.get(c, 0):9d}" for c in cls) + f"   {100 * ok / n:5.0f}%")
+    print("(correct = good position read as good, wrong position read as wrong; 'side' = unclear, ignored)")
 
 
 if __name__ == "__main__":

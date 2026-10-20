@@ -7,6 +7,7 @@ import cv2
 
 from . import config
 from .hand_state import classify_hand, palm_direction
+from . import palm_calib
 
 POSE_WRIST = {"right": 16, "left": 15}
 
@@ -28,6 +29,7 @@ class HandChecker:
         self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
         self.palm_scores = {"right": None, "left": None}   # (front, inward), each -1..1
         self.hand_landmarks = []
+        self.calib = palm_calib.load(config.PALM_CALIB_FILE) if config.PALM_CALIB_FILE else None
         self.raw = {"right": None, "left": None}      # the matched hand's 21 landmarks (for tools/palm_calibrate.py)
         self.handed = {"right": None, "left": None}   # MediaPipe's own left/right guess for that hand: (label, score)
 
@@ -76,6 +78,9 @@ class HandChecker:
                 label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
                                                       config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE,
                                                       toward_mid)
+                if self.calib is not None:            # per-user calibration knows how YOUR fist reads
+                    feats = palm_calib.hand_features(b, arm, w, h, front, inward)
+                    label = palm_calib.classify(self.calib, feats, config.PALM_CALIB_MARGIN)[0]
                 palms[arm], scores[arm] = label, (front, inward)
                 raw[arm] = b
                 if k < len(multi_handed):

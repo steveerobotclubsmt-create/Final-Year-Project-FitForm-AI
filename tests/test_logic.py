@@ -467,6 +467,24 @@ def test_idle_arm_does_not_hide_the_active_arm_message():
     assert f.message == "RIGHT: Clench your fist"
 
 
+def test_palm_calibration_classifier():
+    """Nearest recorded position, robust to a few readings taken in the wrong position."""
+    from fitform import palm_calib as pc
+    import random
+    med = {"inward": (-0.85, 0.5, 0.57, 0.47, -0.42, 0.40), "front": (0.9, 0.42, -0.13, 0.46, 0.73, 0.25),
+           "outward": (0.94, 0.0, -0.54, 0.04, 0.63, -0.2), "back": (-0.77, 0.46, 0.68, 0.12, -0.67, 0.45)}
+    rnd = random.Random(1)
+    rows = []
+    for c, m_ in med.items():
+        for _ in range(40):
+            rows.append({"pos": c, **{f: v + rnd.gauss(0, 0.1) for f, v in zip(pc.FEATURES, m_)}})
+        rows.append({"pos": c, **dict(zip(pc.FEATURES, med["front" if c != "front" else "back"]))})  # a wrong one
+    model = pc.fit(rows)
+    for c, m_ in med.items():
+        assert pc.classify(model, dict(zip(pc.FEATURES, m_)))[0] == c
+    assert pc.fit([r for r in rows if r["pos"] != "back"]) is None      # a position missing
+
+
 # ---------- back-to-back reps ----------
 def test_second_rep_counts_when_arm_only_lowered_to_about_145():
     """Doing reps back to back the arm often only comes down to ~140-150 degrees."""
