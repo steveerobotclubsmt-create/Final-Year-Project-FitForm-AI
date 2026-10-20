@@ -26,6 +26,8 @@ UPPER_ARM_DRIFT_MAX = 30     # upper arm may move this many degrees from its sta
 UPPER_ARM_MAX_TILT = 30      # upper arm must point down: more than this many degrees from vertical = wrong
 UPPER_ARM_MIN_LENGTH = 0.8   # elbow forward/back: the upper arm looks shorter to a front camera; below this
                              # share of its length at the start (measured against shoulder width) = wrong
+SIDE_VIEW_RATIO = 0.45       # shoulder width / torso length below this = standing sideways to the camera
+                             # (then the forward/back check is skipped; the upper-arm tilt check covers it)
 PALM_BAD_MAX_RATIO = 0.4     # down position + lower part of the lift: this share (or more) of wrong palm
                              # readings = rep not counted ('side' / unclear readings are not counted either way)
 PALM_BAD_MIN_READINGS = 2    # ... and at least this many wrong readings

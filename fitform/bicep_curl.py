@@ -224,7 +224,10 @@ class BicepCurlCounter:
         tilt = vector_angle(u2, [0.0, 1.0]) if u2 is not None else None
         # ... and must not swing forward/back: the camera then sees it shorter (relative to shoulder width).
         len_ratio = None
-        if m.get("upper_len") and m.get("shoulder_w"):
+        side_view = bool(m.get("side_view"))
+        if side_view:
+            self._len_ref = None                   # shoulder width means nothing sideways; start again later
+        elif m.get("upper_len") and m.get("shoulder_w"):
             r = m["upper_len"] / m["shoulder_w"]
             if straight_raw:
                 self._len_ref = r if self._len_ref is None else 0.7 * self._len_ref + 0.3 * r
@@ -318,7 +321,7 @@ class BicepCurlCounter:
             "elbow_angle": elbow, "drift": drift, "wrist_angle": wrist, "hand": hand, "palm": palm,
             "elbow_swinging": elbow_swinging, "wrist_bent": wrist_bent, "hand_open": hand_open,
             "palm_away": palm_away, "not_extended": not_extended, "not_ready": not self.ready,
-            "tilt": tilt, "len_ratio": len_ratio, "arm_tilted": arm_tilted, "arm_forward": arm_forward,
+            "tilt": tilt, "len_ratio": len_ratio, "side_view": side_view, "arm_tilted": arm_tilted, "arm_forward": arm_forward,
         }
         return event
 

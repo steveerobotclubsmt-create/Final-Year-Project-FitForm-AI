@@ -65,8 +65,12 @@ class HandChecker:
                 b = self.hand_landmarks[k].landmark
                 states[arm] = classify_hand(b, w, h)
                 points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
+                # shoulder line from the pose (x and depth) so palm directions follow the body when sideways
+                me, other = (lm[12], lm[11]) if arm == "right" else (lm[11], lm[12])
+                toward_mid = ((other.x - me.x) * w, (other.z - me.z) * w)
                 label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
-                                                      config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE)
+                                                      config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE,
+                                                      toward_mid)
                 palms[arm], scores[arm] = label, (front, inward)
         self.states = states
         self.points = points
