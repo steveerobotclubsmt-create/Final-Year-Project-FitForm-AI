@@ -41,9 +41,20 @@ def main():
     ap.add_argument("--arm", default="right", choices=["right", "left"])
     ap.add_argument("--seconds", type=float, default=5.0)
     ap.add_argument("--check", action="store_true", help="only re-check the saved ~/palm_calib.csv")
+    ap.add_argument("--drop", help="remove holds that were done wrong, e.g. --drop inward,outward2 (then re-check)")
     args = ap.parse_args()
     out = os.path.expanduser("~/palm_calib.csv")
-    if args.check:
+    if args.drop:
+        drop = {d.strip() for d in args.drop.split(",") if d.strip()}
+        with open(out, newline="") as fh:
+            rd = csv.DictReader(fh)
+            cols, keep = rd.fieldnames, [r for r in rd if r["pos"] not in drop]
+        with open(out, "w", newline="") as fh:
+            wr = csv.DictWriter(fh, fieldnames=cols)
+            wr.writeheader()
+            wr.writerows(keep)
+        print(f"removed holds {sorted(drop)}; {len(keep)} readings left")
+    if args.check or args.drop:
         report(out)
         return
     src = "picam" if args.camera == "picam" else int(args.camera)
