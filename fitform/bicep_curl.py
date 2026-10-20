@@ -80,8 +80,8 @@ def measure_from_world(world_landmarks, arm):
 REASON_TEXT = {
     "elbow": "elbow moved",
     "wrist": "wrist bent",
-    "fist": "hand not clenched",
-    "palm_dir": "palm not facing forward",
+    "fist": "hand open (close your hand)",
+    "palm_dir": "hand turned outward",
     "hand_hidden": "hand not visible",
     "fast": "too fast",
     "slow": "too slow",
@@ -144,16 +144,17 @@ class BicepCurlCounter:
         reasons, notes = set(), []
         if config.FIST_CHECK:
             seen = [e[1] for e in window if e[1] in ("fist", "open", "partial")]
-            fists = sum(1 for h in seen if h == "fist")
-            notes.append(f"start fist {fists}/{len(seen)}")
+            closed = sum(1 for h in seen if h != "open")
+            notes.append(f"start closed hand {closed}/{len(seen)}")
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
-            elif fists * 2 <= len(seen):
+            elif closed * 2 <= len(seen):
                 reasons.add("fist")
         if config.PALM_CHECK:
             seen = [e[2] for e in window if e[2] in ("front", "back", "side")]
-            front = sum(1 for p in seen if p == "front")
-            notes.append(f"start palm front {front}/{len(seen)}")
+            good = ("front", "back") if config.PALM_ALLOW_BACK else ("front",)
+            front = sum(1 for p in seen if p in good)
+            notes.append(f"start palm facing camera {front}/{len(seen)}")
             if len(seen) < config.HAND_MIN_READINGS:
                 reasons.add("hand_hidden")
             elif front < config.PALM_FRONT_MIN_RATIO * len(seen):
@@ -212,8 +213,9 @@ class BicepCurlCounter:
         low = elbow > config.PALM_CHECK_ELBOW_MIN
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
         wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
-        hand_open = config.FIST_CHECK and hand in ("open", "partial")
-        palm_away = config.PALM_CHECK and palm in ("back", "side") and low
+        hand_open = config.FIST_CHECK and hand == "open"
+        bad_palm = ("side",) if config.PALM_ALLOW_BACK else ("back", "side")
+        palm_away = config.PALM_CHECK and palm in bad_palm and low
         hand_hidden = hand_checks and hand is None and palm is None and low
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE

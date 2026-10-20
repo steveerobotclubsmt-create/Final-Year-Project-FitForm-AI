@@ -137,6 +137,20 @@ def test_classify_hand():
     assert classify_hand(hand(2)) == "partial"
 
 
+def test_fist_detected_with_hand_hanging_down_and_tilted():
+    """Same closed hand rotated 180 and 40 degrees must still read as a fist."""
+    import math as _m
+    base = hand(4)
+    for deg in (180, 40, -70):
+        r = _m.radians(deg)
+        rot = [P(0.5 + (p.x - 0.5) * _m.cos(r) - (p.y - 0.8) * _m.sin(r),
+                 0.8 + (p.x - 0.5) * _m.sin(r) + (p.y - 0.8) * _m.cos(r)) for p in base]
+        assert classify_hand(rot) == "fist", deg
+        rot_open = [P(0.5 + (p.x - 0.5) * _m.cos(r) - (p.y - 0.8) * _m.sin(r),
+                      0.8 + (p.x - 0.5) * _m.sin(r) + (p.y - 0.8) * _m.cos(r)) for p in hand(0)]
+        assert classify_hand(rot_open) == "open", deg
+
+
 def test_open_hand_rep_rejected():
     config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
@@ -144,7 +158,7 @@ def test_open_hand_rep_rejected():
     for t, e in ((0.3, 120), (0.5, 90), (0.7, 70)):
         c.update(m(e), t, "open")
     assert c.update(m(30), 1.0, "open") == "rejected"
-    assert c.last_reasons == ["hand not clenched"]
+    assert c.last_reasons == ["hand open (close your hand)"]
     config.FIST_CHECK = False
 
 
@@ -248,15 +262,19 @@ def test_palm_forward_rep_counts_even_if_back_seen_at_top():
     assert ev == "counted"
 
 
-def test_reverse_grip_rep_rejected():
+def test_reverse_grip_rejected_only_when_back_not_allowed():
+    config.PALM_ALLOW_BACK = False
     ev, c = _palm_rep(["back", "back", "back", "back", "side", "side"])
-    assert ev == "rejected" and c.last_reasons == ["palm not facing forward"]
+    assert ev == "rejected" and c.last_reasons == ["hand turned outward"]
+    config.PALM_ALLOW_BACK = True
+    ev, c = _palm_rep(["back", "back", "back", "back", "side", "side"])
+    assert ev == "counted"     # default: a fist from the back looks like a fist from the front
 
 
 def test_hand_turned_outward_rejected():
     """Hand rotated out to the side: the camera sees the edge of the hand, never the palm."""
     ev, c = _palm_rep(["side", "side", "side", "side", "side", "side"])
-    assert ev == "rejected" and c.last_reasons == ["palm not facing forward"]
+    assert ev == "rejected" and c.last_reasons == ["hand turned outward"]
 
 
 # ---------- tempo + start position ----------
@@ -328,7 +346,7 @@ def test_palm_turned_out_for_long_during_lift_rejected():
     for t, e in ((0.2, 140), (0.4, 130), (0.6, 120)):   # ... then hand turned out for 0.4 s
         c.update(m(e), t, palm="side")
     assert c.update(m(35), 1.0, palm="back") == "rejected"
-    assert c.last_reasons == ["palm not facing forward"]
+    assert c.last_reasons == ["hand turned outward"]
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
