@@ -6,7 +6,7 @@ import math
 import cv2
 
 from . import config
-from .hand_state import classify_hand, palm_direction
+from .hand_state import classify_hand, fist_turn_score, palm_direction
 
 POSE_WRIST = {"right": 16, "left": 15}
 
@@ -67,6 +67,12 @@ class HandChecker:
                 points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
                 label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
                                                       config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE)
+                if states[arm] == "fist" and config.FIST_PALM_TO_BODY:
+                    # a fist: the textbook palm formula reads 'turned out' as 'palm forward', so use the
+                    # measured fist reading instead (palm must face the body; outward or forward = wrong)
+                    t = fist_turn_score(b, arm, w, h)
+                    label = "inward" if t < -config.FIST_TURN_MIN else ("outward" if t > config.FIST_TURN_MIN else "side")
+                    front, inward = t, 0.0
                 palms[arm], scores[arm] = label, (front, inward)
         self.states = states
         self.points = points

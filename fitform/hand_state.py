@@ -49,6 +49,25 @@ def classify_hand(landmarks, width=1.0, height=1.0):
     return "partial"
 
 
+def fist_turn_score(landmarks, arm, width=1.0, height=1.0):
+    """For a clenched fist seen by the FRONT camera: < 0 = palm towards the body, > 0 = fist turned
+    outward (or palm forward). From the 2D picture only (which way round the wrist / index knuckle /
+    little-finger knuckle triangle appears), so MediaPipe's unreliable depth guess is not used.
+    Measured 20 Oct: palm-to-body holds -0.79 to -0.91, turned-out holds +0.91 to +0.98."""
+    def v(k):
+        return (landmarks[k].x * width - landmarks[0].x * width,
+                landmarks[k].y * height - landmarks[0].y * height,
+                (getattr(landmarks[k], "z", 0.0) - getattr(landmarks[0], "z", 0.0)) * width)
+    i, p = v(5), v(17)
+    cx = i[1] * p[2] - i[2] * p[1]
+    cy = i[2] * p[0] - i[0] * p[2]
+    cz = i[0] * p[1] - i[1] * p[0]
+    n = math.sqrt(cx * cx + cy * cy + cz * cz)
+    if n == 0:
+        return 0.0
+    return (-1 if arm == "right" else 1) * cz / n
+
+
 PALM_GOOD = ("front", "inward")        # standard curl: palm forward, or facing the body at the bottom
 PALM_BAD = ("outward", "back")         # hand turned away from the body, or reverse grip
 PALM_ALL = PALM_GOOD + PALM_BAD + ("side",)

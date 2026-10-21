@@ -197,6 +197,18 @@ def test_side_camera_turned_out_rejects_rep():
     config.PALM_CHECK = False
 
 
+def test_fist_turn_score_front_camera():
+    """Index knuckle on the image right of the little-finger knuckle (right arm) = palm towards the body."""
+    from fitform.hand_state import fist_turn_score
+    def fist(index_x, pinky_x):
+        pts = [P(0.5, 0.5, 0.0) for _ in range(21)]
+        pts[5], pts[17] = P(index_x, 0.56), P(pinky_x, 0.56)
+        return pts
+    assert fist_turn_score(fist(0.47, 0.53), "right") > 0.5      # (palm_hand 'front' layout) -> out/forward
+    assert fist_turn_score(fist(0.53, 0.47), "right") < -0.5     # mirror image -> towards the body
+    assert fist_turn_score(fist(0.53, 0.47), "left") > 0.5       # same picture is the opposite for the left hand
+
+
 def test_bottle_grip_counts_as_clenched():
     assert classify_hand(grip_hand(90)) == "fist"         # wrapped round a bottle
     assert classify_hand(grip_hand(15)) == "open"         # relaxed, nearly straight fingers

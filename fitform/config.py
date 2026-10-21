@@ -57,6 +57,9 @@ PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else i
 PALM_HOLD_SECONDS = 0.5      # hand turned outward/backward continuously this long during the lift = not counted
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
+FIST_PALM_TO_BODY = True     # front camera, clenched fist: palm must face the body; turned outward OR palm
+                             # forward = wrong (from the front these two look the same for a fist)
+FIST_TURN_MIN = 0.5          # 0..1 how clear the fist reading must be (measured: about 0.8-1.0); weaker = unclear
 SIDE_EVERY_N = 2             # side camera (--side-camera): judge the palm every N frames
 SIDE_PALM_SIGN = -1          # flip to 1 if the side preview says 'turned out' when your palm faces your body
 SIDE_PALM_MIN = 0.3          # 0..1 how clear the side reading must be; weaker = 'unclear' (not judged)
