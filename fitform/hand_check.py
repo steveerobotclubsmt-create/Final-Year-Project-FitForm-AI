@@ -7,6 +7,7 @@ import cv2
 
 from . import config
 from .hand_state import classify_hand, fist_turn_score, palm_direction
+from . import fist_calib
 
 POSE_WRIST = {"right": 16, "left": 15}
 
@@ -28,6 +29,7 @@ class HandChecker:
         self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
         self.palm_scores = {"right": None, "left": None}   # (front, inward), each -1..1
         self.hand_landmarks = []
+        self.fist_calib = fist_calib.load(config.FIST_CALIB_FILE) if config.FIST_CALIB_FILE else None
 
     def process(self, frame_bgr, pose_landmarks):
         """frame_bgr: the same un-mirrored frame given to PoseEngine.
@@ -71,7 +73,9 @@ class HandChecker:
                     # a fist: the textbook palm formula reads 'turned out' as 'palm forward', so use the
                     # measured fist reading instead (palm must face the body; outward or forward = wrong)
                     t = fist_turn_score(b, arm, w, h)
-                    label = "inward" if t < -config.FIST_TURN_MIN else ("outward" if t > config.FIST_TURN_MIN else "side")
+                    label = fist_calib.classify(self.fist_calib, arm, t)   # recorded per arm, if calibrated
+                    if label is None:
+                        label = "inward" if t < -config.FIST_TURN_MIN else ("outward" if t > config.FIST_TURN_MIN else "side")
                     front, inward = t, 0.0
                 palms[arm], scores[arm] = label, (front, inward)
         self.states = states

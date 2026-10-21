@@ -238,6 +238,19 @@ def test_fist_turn_score_front_camera():
     assert fist_turn_score(fist(0.53, 0.47), "left") > 0.5       # same picture is the opposite for the left hand
 
 
+def test_fist_calibration_per_arm():
+    """Values from the labelled runs of 21 Oct: left sign reversed, right correct = edge-on (near 0)."""
+    from fitform import fist_calib
+    cal = {"left": {"good": [0.94, 0.98, 0.99, 0.81, 1.0, 0.96, 0.92], "bad": [-0.79, -0.61, -0.92, -0.99, -0.72, -0.9, -0.86]},
+           "right": {"good": [0.04, 0.25, 0.42, -0.1, 0.13, -0.03, 0.36], "bad": [0.97, 0.95, -0.99, 0.98, -0.85, -0.97, 0.74]}}
+    assert fist_calib.classify(cal, "left", 0.95) == "inward"
+    assert fist_calib.classify(cal, "left", -0.9) == "outward"
+    assert fist_calib.classify(cal, "right", 0.1) == "inward"
+    assert fist_calib.classify(cal, "right", -0.95) == "outward"     # turned out reads either sign ...
+    assert fist_calib.classify(cal, "right", 0.95) == "outward"      # ... for the right arm
+    assert fist_calib.classify({}, "right", 0.1) is None             # not calibrated -> fixed rule is used
+
+
 def test_bottle_grip_counts_as_clenched():
     assert classify_hand(grip_hand(90)) == "fist"         # wrapped round a bottle
     assert classify_hand(grip_hand(15)) == "open"         # relaxed, nearly straight fingers
