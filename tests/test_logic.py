@@ -137,9 +137,9 @@ def test_random_hand_turning_is_rejected():
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
     c = BicepCurlCounter("right", alpha=1.0)
     c.update(m(170), 0.0, palm="inward", side_palm="front")
-    for t, e, p in ((0.1, 138, "outward"), (0.2, 133, "front"), (0.3, 128, "outward"),
-                    (0.4, 124, "front"), (0.5, 118, "outward"), (0.6, 113, "front")):
-        c.update(m(e), t, palm="side", side_palm=p)
+    for t, e, p in ((0.1, 138, "outward"), (0.2, 133, "outward"), (0.3, 128, "front"),
+                    (0.4, 124, "outward"), (0.5, 118, "outward"), (0.6, 113, "front")):
+        c.update(m(e), t, palm="side", side_palm=p)     # mostly turned out (side camera needs a clear majority)
     assert c.update(m(35), 1.0, palm="side", side_palm="side") == "rejected"
     assert c.last_reasons == ["palm turned outward or backward"]
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0

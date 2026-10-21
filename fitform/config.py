@@ -66,9 +66,10 @@ FIST_PALM_TO_BODY = True     # front camera, clenched fist: palm must face the b
 FIST_TURN_MIN = 0.5          # 0..1 how clear the fist reading must be (measured: about 0.8-1.0); weaker = unclear
 SIDE_EVERY_N = 2             # side camera (--side-camera): judge the palm every N frames
 SIDE_PALM_SIGN = -1          # flip to 1 if the side preview says 'turned out' when your palm faces your body
-SIDE_PALM_MIN = 0.3          # 0..1 how clear the side reading must be; weaker = 'unclear' (not judged)
-SIDE_BAD_MIN_READINGS = 2    # side camera: at least this many 'turned out' readings in a rep ...
-SIDE_BAD_RATIO = 0.3         # ... and this share of its clear readings -> rep not counted
+SIDE_PALM_MIN = 0.6          # 0..1 how clear the side reading must be; weaker = 'unclear' (not judged).
+                             # High because the webcam cannot sit at a true 90 degrees yet (1 m cable)
+SIDE_BAD_MIN_READINGS = 3    # side camera: at least this many 'turned out' readings in a rep ...
+SIDE_BAD_RATIO = 0.5         # ... and this share of its clear readings -> rep not counted
 HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)
 PARALLEL_HANDS = True        # run hand detection at the same time as pose detection (uses a second CPU core)
 HAND_MODEL_COMPLEXITY = 0    # 0 = fastest
