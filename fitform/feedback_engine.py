@@ -2,7 +2,7 @@
 feedback to show."""
 
 from . import config
-from .bicep_curl import ARMS, BicepCurlCounter, arm_points, get_angle, measure_from_points, measure_from_world
+from .bicep_curl import ARMS, FIX_TEXT, BicepCurlCounter, arm_points, get_angle, measure_from_points, measure_from_world
 
 RED = (0, 0, 255)
 ORANGE = (0, 165, 255)
@@ -67,17 +67,24 @@ class FeedbackEngine:
                     events.append((arm, event))
                 drawn[arm] = pts
         old = (self.message, self.message_color)
-        self._set_message(list(drawn), partly_visible, events)
+        self._set_message(list(drawn), partly_visible, events, now)
         new = (self.message, self.message_color)
         # keep a message on screen for a moment so it does not flicker; rep results always show at once
         if new != old:
-            if events or now - self._msg_time >= config.MESSAGE_HOLD_SECONDS:
+            paused = any(now < c.blocked_until for c in self.counters.values())
+            if events or paused or now - self._msg_time >= config.MESSAGE_HOLD_SECONDS:
                 self._msg_time = now
             else:
                 self.message, self.message_color = old
         return events, drawn
 
-    def _set_message(self, seen_arms, partly_visible=False, events=()):
+    def _reject_message(self, arm):
+        c = self.counters[arm]
+        why = c.last_reasons[0] if c.last_reasons else "check your form"
+        fix = FIX_TEXT.get(c.reject_key)
+        return f"{arm.upper()}: Not counted - {why}" + (f"\n{fix}" if fix else "")
+
+    def _set_message(self, seen_arms, partly_visible=False, events=(), now=None):
         if not seen_arms:
             if partly_visible:
                 self.message, self.message_color = "Step back - keep your hands in view", ORANGE
@@ -90,9 +97,14 @@ class FeedbackEngine:
             if event == "counted":
                 self.message, self.message_color = f"{arm.upper()}: Good rep!", GREEN
             else:
-                why = c.last_reasons[0] if c.last_reasons else "check your form"
-                self.message, self.message_color = f"{arm.upper()}: Not counted - {why}", RED
+                self.message, self.message_color = self._reject_message(arm), RED
             return
+        # Pause after a rejected rep: keep showing what was wrong and what to do.
+        if now is not None:
+            for arm, c in self.counters.items():
+                if now < c.blocked_until:
+                    self.message, self.message_color = self._reject_message(arm), RED
+                    return
         # Otherwise the most urgent live problem on any visible arm. An arm that has not started (for
         # example holding the phone) is ignored while the other arm is exercising.
         active = [a for a in seen_arms if self.counters[a].ready]

@@ -90,6 +90,19 @@ REASON_TEXT = {
     "arm_tilt": "upper arm not pointing down",
     "arm_forward": "elbow moved forward/back",
 }
+# what the user should do about each problem (shown under the 'Not counted' message)
+FIX_TEXT = {
+    "elbow": "Keep your elbow still at your side",
+    "arm_tilt": "Keep your upper arm pointing down",
+    "arm_forward": "Keep your elbow by your side",
+    "wrist": "Keep your wrist straight",
+    "fist": "Grip the weight firmly",
+    "palm_dir": "Keep your palm facing your body",
+    "hand_hidden": "Keep your hand in view of the camera",
+    "fast": "Lift a little slower",
+    "slow": "Lift a little faster",
+    "not_lowered": "Straighten your arm fully at the bottom",
+}
 REASON_ORDER = ("arm_tilt", "arm_forward", "elbow", "hand_hidden", "fist", "palm_dir", "wrist", "fast", "slow")
 
 
@@ -124,6 +137,8 @@ class BicepCurlCounter:
         self._start_checked = False
         self._fault_since = {}
         self._hand_log = []        # (time, hand state, palm direction, elbow angle)
+        self.blocked_until = 0.0   # after a rejected rep: no new rep until the user has read what was wrong
+        self.reject_key = None     # main reason of the last rejected rep (for the 'what to do' hint)
         self._side_log = []        # (time, side-camera palm label) - only when a side camera is used
         self._rose_since_top = False   # arm went back down after the top without becoming straight
         self._len_ref = None           # upper-arm length / shoulder width at the start of the rep
@@ -162,9 +177,11 @@ class BicepCurlCounter:
             elif fists * 2 <= len(seen):
                 reasons.add("fist")
         if config.PALM_CHECK:
-            seen = [e[2] for e in window if e[2] in PALM_ALL]      # 'side' = hand seen, direction unclear
-            if len(seen) < config.HAND_MIN_READINGS:
-                reasons.add("hand_hidden")
+            # front camera palm direction: only while the arm is (nearly) straight - from about 130 degrees on,
+            # a correct fist starts to read 'outward' because the forearm tilts towards the camera (21 Oct log)
+            seen = [e[2] for e in window if e[2] in PALM_ALL and e[3] > config.PALM_DIR_ELBOW_MIN]
+            if len(seen) < config.HAND_MIN_READINGS and not config.FIST_CHECK:
+                reasons.add("hand_hidden")      # (with the fist check on, that check already covers a hidden hand)
             # the down-position readings start the palm vote; the lower part of the lift adds to it and
             # the decision is made once at the top (one vote, so a few noisy readings cannot fail the rep)
             self._lift_palm = [sum(1 for p in seen if p in PALM_GOOD), sum(1 for p in seen if p in PALM_BAD)]
@@ -245,13 +262,14 @@ class BicepCurlCounter:
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
         wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
         hand_open = config.FIST_CHECK and hand in ("open", "partial")
-        palm_away = config.PALM_CHECK and palm in PALM_BAD and low
+        straight_part = elbow > config.PALM_DIR_ELBOW_MIN
+        palm_away = config.PALM_CHECK and palm in PALM_BAD and straight_part
         hand_hidden = hand_checks and hand is None and palm is None and low
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
 
         event = None
-        if straight and self.ready:
+        if straight and self.ready and now >= self.blocked_until:
             # Arm fully straight: every new attempt starts here with a clean slate, so a
             # half rep that went wrong does not carry its fault into the next proper rep.
             self.form_ok = True
@@ -269,7 +287,7 @@ class BicepCurlCounter:
                 if self._start_tilt is not None and self._start_tilt > config.UPPER_ARM_MAX_TILT:
                     self._reasons.add("arm_tilt")
                 self._start_checked = True
-            elif config.PALM_CHECK and low and palm in PALM_ALL and palm != "side":
+            elif config.PALM_CHECK and straight_part and palm in PALM_ALL and palm != "side":
                 self._lift_palm[1 if palm in PALM_BAD else 0] += 1   # (this frame is already in the start vote)
             for key, on in (("elbow", elbow_swinging), ("arm_tilt", arm_tilted), ("arm_forward", arm_forward),
                             ("wrist", wrist_bent), ("fist", hand_open),
@@ -281,7 +299,9 @@ class BicepCurlCounter:
 
         self._top_frames = self._top_frames + 1 if elbow < config.UP_ANGLE else 0
         # Curled again without straightening the arm in between: tell the user instead of staying silent.
-        if self.stage == "up":
+        if self.stage == "up" and now < self.blocked_until:
+            self._rose_since_top = False           # pause after a rejected rep: nothing is judged
+        elif self.stage == "up":
             if elbow > config.PALM_CHECK_ELBOW_MIN:
                 self._rose_since_top = True
             elif self._rose_since_top and self._top_frames >= config.TOP_CONFIRM_FRAMES:
@@ -291,6 +311,8 @@ class BicepCurlCounter:
                 self.last_up_time = None
                 self.last_hand_summary = ""
                 self.last_reasons = [REASON_TEXT["not_lowered"]]
+                self.reject_key = "not_lowered"
+                self.blocked_until = now + config.REJECT_PAUSE_SECONDS
                 event = "rejected"
         if self.stage == "down" and self._top_frames >= config.TOP_CONFIRM_FRAMES:
             self.stage = "up"
@@ -328,6 +350,8 @@ class BicepCurlCounter:
                 event = "counted"
             else:
                 self.last_reasons = [REASON_TEXT[r] for r in REASON_ORDER if r in self._reasons]
+                self.reject_key = next((r for r in REASON_ORDER if r in self._reasons), None)
+                self.blocked_until = now + config.REJECT_PAUSE_SECONDS
                 event = "rejected"
 
         self.last = {

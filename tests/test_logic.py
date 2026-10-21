@@ -22,6 +22,7 @@ config.STRAIGHT_CONFIRM_FRAMES = 1   # one frame per position in the short seque
 config.TOP_CONFIRM_FRAMES = 1
 config.FAULT_HOLD_SECONDS = 0.0      # faults count at once here; the hold time has its own tests
 config.HAND_MIN_READINGS = 1
+config.REJECT_PAUSE_SECONDS = 0.0   # the pause after a rejected rep has its own test
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -131,16 +132,44 @@ def test_elbow_moving_forward_is_rejected():
 
 
 def test_random_hand_turning_is_rejected():
-    """Turning the hand back and forth: no single wrong stretch is long, but many readings are wrong."""
+    """Turning the hand back and forth during the lift: the side camera sees it (the front camera only
+    judges the palm while the arm is straight)."""
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
     c = BicepCurlCounter("right", alpha=1.0)
-    c.update(m(170), 0.0, palm="front")
-    for t, e, p in ((0.1, 138, "outward"), (0.2, 133, "front"), (0.3, 128, "back"),
-                    (0.4, 124, "inward"), (0.5, 118, "outward"), (0.6, 113, "front")):
-        c.update(m(e), t, palm=p)
-    assert c.update(m(35), 1.0, palm="back") == "rejected"
+    c.update(m(170), 0.0, palm="inward", side_palm="front")
+    for t, e, p in ((0.1, 138, "outward"), (0.2, 133, "front"), (0.3, 128, "outward"),
+                    (0.4, 124, "front"), (0.5, 118, "outward"), (0.6, 113, "front")):
+        c.update(m(e), t, palm="side", side_palm=p)
+    assert c.update(m(35), 1.0, palm="side", side_palm="side") == "rejected"
     assert c.last_reasons == ["palm turned outward or backward"]
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_front_camera_ignores_palm_readings_mid_lift():
+    """A correct fist reads 'outward' to the front camera once the forearm tilts (21 Oct log): ignored."""
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(172), 0.0, palm="inward")
+    c.update(m(170), 0.1, palm="inward")
+    for t, e in ((0.3, 140), (0.45, 126), (0.6, 114), (0.75, 90)):
+        c.update(m(e), t, palm="outward")
+    assert c.update(m(35), 1.0, palm="outward") == "counted"
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_rejected_rep_pauses_before_the_next_one():
+    config.REJECT_PAUSE_SECONDS = 2.5
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0)
+    c.update(m(90, drift_deg=40), 0.5)
+    assert c.update(m(30, drift_deg=40), 1.0) == "rejected"
+    c.update(m(170), 1.5)                         # straight again, but still inside the pause ...
+    c.update(m(90), 2.0)
+    assert c.update(m(30), 2.5) is None           # ... so this curl is not started / counted
+    c.update(m(170), 3.6)                         # after the pause: normal again
+    c.update(m(90), 4.0)
+    assert c.update(m(30), 4.5) == "counted"
+    config.REJECT_PAUSE_SECONDS = 0.0
 
 
 def test_bent_wrist_rejected():
@@ -313,6 +342,7 @@ def _palm_rep(palms):
     config.PALM_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
     ev = None
+    c.update(m(172), -0.1, palm=palms[0])        # the down position lasts more than one frame
     for (t, e), p in zip(((0.0, 170), (0.3, 140), (0.5, 125), (0.7, 90), (0.85, 70), (1.0, 30)), palms):
         ev = c.update(m(e), t, palm=p)
     config.PALM_CHECK = False
@@ -419,13 +449,24 @@ def test_hand_hidden_too_long_is_not_counted():
 
 
 def test_palm_turned_out_for_long_during_lift_rejected():
+    """Hand turned out during the lift: the side camera catches it."""
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
     c = BicepCurlCounter("right", alpha=1.0)
-    c.update(m(170), 0.0, palm="front")           # good start ...
-    for t, e in ((0.2, 138), (0.4, 130), (0.6, 120)):   # ... then hand turned out for 0.4 s
-        c.update(m(e), t, palm="outward")
-    assert c.update(m(35), 1.0, palm="back") == "rejected"
+    c.update(m(170), 0.0, palm="inward", side_palm="front")       # good start ...
+    for t, e in ((0.2, 138), (0.4, 130), (0.6, 120)):              # ... then hand turned out for 0.4 s
+        c.update(m(e), t, palm="side", side_palm="outward")
+    assert c.update(m(35), 1.0, palm="side", side_palm="outward") == "rejected"
     assert c.last_reasons == ["palm turned outward or backward"]
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
+
+
+def test_palm_turned_out_at_the_bottom_rejected_by_front_camera():
+    config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
+    c = BicepCurlCounter("left", alpha=1.0)                        # left arm: no side camera
+    for t in (0.0, 0.1, 0.2, 0.3):
+        c.update(m(171), t, palm="outward")
+    c.update(m(120), 0.6, palm="side")
+    assert c.update(m(35), 1.0, palm="side") == "rejected"
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 

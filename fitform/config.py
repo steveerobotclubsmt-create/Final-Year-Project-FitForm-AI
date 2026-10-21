@@ -38,7 +38,7 @@ USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct:
 # ---- Rep quality ----
 READY_HOLD_SECONDS = 0.5     # before the first rep (or after the arm left the view) hold the arm straight this long
 ARM_LOST_RESET_SECONDS = 2.0 # arm out of view longer than this -> must show the ready position again
-MIN_UP_SECONDS = 0.4         # lifting (straight -> top) faster than this = "too fast" (normal reps measured 0.5-0.9 s)
+MIN_UP_SECONDS = 0.3         # lifting (straight -> top) faster than this = "too fast" (lowered from 0.4 on 21 Oct)
 MAX_UP_SECONDS = 5.0         # lifting slower than this = "too slow", rep not counted
 STRAIGHT_CONFIRM_FRAMES = 2  # arm must read straight this many frames in a row (ignores one-frame angle jumps)
 TOP_CONFIRM_FRAMES = 2       # arm must read curled this many frames in a row before the rep is finished
@@ -50,7 +50,11 @@ FIST_CHECK = True            # hand must be a clenched fist (or wrapped round a 
 PALM_CHECK = True            # palm must face forward or towards the body; outward or backward fails
 HAND_WINDOW_BEFORE = 1.0     # the down (start) position: last N seconds with the arm straight before the lift
 HAND_MIN_READINGS = 2        # hand must be seen this many times in the down position, else "hand not visible"
-PALM_CHECK_ELBOW_MIN = 110   # palm direction is judged only in the lower part of the rep (elbow above this angle)
+PALM_CHECK_ELBOW_MIN = 110   # fist / hidden-hand readings count in the lower part of the rep (elbow above this angle)
+PALM_DIR_ELBOW_MIN = 150     # FRONT camera palm direction only while the arm is nearly straight (above this angle);
+                             # the side camera judges the middle and top of the rep
+REJECT_PAUSE_SECONDS = 2.5   # after a rep is not counted: show what was wrong and what to do for this long
+                             # before the next rep can start
 PALM_MIN_SCORE = 0.35        # 0..1 how clearly the palm must face forward/inward to be read as good (else 'side')
 PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else it is read as 'side' (unclear);
                              # a fist seen from the front gives noisy palm readings, so weak 'wrong' ones are ignored

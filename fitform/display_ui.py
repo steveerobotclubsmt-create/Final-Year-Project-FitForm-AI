@@ -61,14 +61,20 @@ def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
             col = {"fist": GREEN, "open": RED, "partial": RED}.get(counter.hand, (120, 120, 120))
             cv2.putText(image, "FIST", (x + 95, 118), FONT, 0.5, col, 2)
         if config.PALM_CHECK:
-            col = {"front": GREEN, "back": RED, "side": RED}.get(counter.palm, (120, 120, 120))
+            col = {"front": GREEN, "inward": GREEN, "back": RED, "outward": RED}.get(counter.palm, (120, 120, 120))
             cv2.putText(image, "PALM", (x + 95, 140), FONT, 0.5, col, 2)
 
     mins, secs = divmod(int(elapsed_s), 60)
     cv2.putText(image, f"{calories_kcal:.2f} kcal   {mins:02d}:{secs:02d}   {fps:.0f} FPS",
                 (200, 30), FONT, 0.6, WHITE, 2)
 
-    cv2.rectangle(image, (0, h - 55), (w, h), (20, 20, 20), -1)
-    cv2.putText(image, feedback.message, (10, h - 18), FONT, 0.8, feedback.message_color, 2)
-    cv2.putText(image, "Q = quit  |  R = reset", (10, h - 65), FONT, 0.45, (150, 150, 150), 1)
+    lines = feedback.message.split("\n")
+    bar = 55 if len(lines) == 1 else 80
+    cv2.rectangle(image, (0, h - bar), (w, h), (20, 20, 20), -1)
+    if len(lines) == 1:
+        cv2.putText(image, lines[0], (10, h - 18), FONT, 0.8, feedback.message_color, 2)
+    else:                                   # 'Not counted - why' + what to do
+        cv2.putText(image, lines[0], (10, h - 48), FONT, 0.7, feedback.message_color, 2)
+        cv2.putText(image, lines[1], (10, h - 14), FONT, 0.7, (0, 200, 255), 2)
+    cv2.putText(image, "Q = quit  |  R = reset", (10, h - bar - 10), FONT, 0.45, (150, 150, 150), 1)
     return image
