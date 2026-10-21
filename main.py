@@ -141,14 +141,16 @@ def main():
             palms = dict(hands.palms) if hands else None
             if side:
                 side_label = side_job.result() if side_job else side.process()
-                if palms is not None and palms.get(args.side_arm) == "back":
-                    # the front camera reads a correct palm-to-body FIST as 'backward' most of the time
-                    # (calibration 20 Oct: 35 of 54 readings), so for this arm the front camera only vetoes
-                    # on 'outward'; the side camera judges outward AND backward
-                    palms[args.side_arm] = "side"
-                if hand_states is not None and side.state is not None:
-                    hand_states = dict(hand_states)
-                    hand_states[args.side_arm] = side.state   # ... and whether that hand is clenched / gripping
+                if side.state is not None:
+                    # the side camera sees this hand: it has priority for the fist AND the palm direction;
+                    # the front camera's hand readings for this arm are not used
+                    if hand_states is not None:
+                        hand_states = dict(hand_states)
+                        hand_states[args.side_arm] = side.state
+                    if palms is not None:
+                        palms[args.side_arm] = "side"
+                # side camera can't see the hand: the front camera judges it as usual (fist; palm with a
+                # straight arm), so a hand the side camera misses is still checked
             prev_landmarks = landmarks
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
