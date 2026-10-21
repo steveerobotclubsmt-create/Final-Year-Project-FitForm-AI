@@ -124,6 +124,7 @@ class BicepCurlCounter:
         self._start_checked = False
         self._fault_since = {}
         self._hand_log = []        # (time, hand state, palm direction, elbow angle)
+        self._side_log = []        # (time, side-camera palm label) - only when a side camera is used
         self._rose_since_top = False   # arm went back down after the top without becoming straight
         self._len_ref = None           # upper-arm length / shoulder width at the start of the rep
         self._start_tilt = None
@@ -179,7 +180,7 @@ class BicepCurlCounter:
         hold = config.PALM_HOLD_SECONDS if key == "palm_dir" else config.FAULT_HOLD_SECONDS
         return now - since >= hold
 
-    def update(self, m, now, hand=None, palm=None):
+    def update(self, m, now, hand=None, palm=None, side_palm=None):
         """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None) and the
         palm direction ('front', 'inward', 'outward', 'back', 'side' or None). Returns 'counted', 'rejected' or None."""
         if m.get("elbow") is None:
@@ -199,6 +200,10 @@ class BicepCurlCounter:
         self._straight_frames = self._straight_frames + 1 if straight_raw else 0
         straight = self._straight_frames >= config.STRAIGHT_CONFIRM_FRAMES
         self._hand_log.append((now, hand, palm, elbow))
+        if side_palm is not None:
+            self._side_log.append((now, side_palm))
+            while self._side_log and now - self._side_log[0][0] > config.MAX_UP_SECONDS + config.HAND_WINDOW_BEFORE + 2.0:
+                self._side_log.pop(0)
         keep = config.MAX_UP_SECONDS + config.HAND_WINDOW_BEFORE + 2.0
         while self._hand_log and now - self._hand_log[0][0] > keep:
             self._hand_log.pop(0)
@@ -294,6 +299,17 @@ class BicepCurlCounter:
                 self._reasons |= self._start_position_reasons(now)
             up_time = now - self._rep_start if self._rep_start is not None else None
             self.last_up_time = up_time
+            if config.PALM_CHECK and self._side_log and self._rep_start is not None:
+                # side camera: same priority as the front. Its reading stays valid for the whole curl (the
+                # forearm turns in the picture plane of a side camera), so the down position AND the lift count.
+                since = self._rep_start - config.HAND_WINDOW_BEFORE
+                seen = [p for t, p in self._side_log if t >= since]
+                s_good = sum(1 for p in seen if p == "front")
+                s_bad = sum(1 for p in seen if p == "outward")
+                note = f"side palm ok {s_good}/{s_good + s_bad}"
+                self.last_hand_summary = f"{self.last_hand_summary}, {note}" if self.last_hand_summary else note
+                if s_bad >= config.SIDE_BAD_MIN_READINGS and s_bad >= config.SIDE_BAD_RATIO * (s_good + s_bad):
+                    self._reasons.add("palm_dir")
             good, bad = self._lift_palm
             if config.PALM_CHECK:
                 note = f"palm ok {good}/{good + bad}"

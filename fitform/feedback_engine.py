@@ -17,7 +17,8 @@ class FeedbackEngine:
         self.message_color = GREY
         self._msg_time = -1e9
 
-    def update(self, landmarks, width, height, now, world=None, hands=None, hand_points=None, palms=None):
+    def update(self, landmarks, width, height, now, world=None, hands=None, hand_points=None, palms=None,
+               side_palms=None):
         """landmarks: MediaPipe pose_landmarks for this frame (None if nobody detected).
         world: MediaPipe pose_world_landmarks (3D) or None. hands: {'right': state, 'left': state} or None.
         hand_points: {'right': (wrist_px, knuckle_px), ...} from MediaPipe Hands (un-mirrored pixels) or None.
@@ -26,6 +27,7 @@ class FeedbackEngine:
         hands = hands or {}
         hand_points = hand_points or {}
         palms = palms or {}
+        side_palms = side_palms or {}
         partly_visible = False
         if landmarks is not None:
             for arm in ARMS:
@@ -57,7 +59,7 @@ class FeedbackEngine:
                     meas["wrist"] = get_angle((lm[e].x * width, lm[e].y * height), hp[0], hp[1])
                 else:
                     meas["wrist"] = None
-                event = self.counters[arm].update(meas, now, hands.get(arm), palms.get(arm))
+                event = self.counters[arm].update(meas, now, hands.get(arm), palms.get(arm), side_palms.get(arm))
                 # both angle versions, so --debug can show which one matches the real arm
                 self.counters[arm].last["elbow2d"] = meas2d["elbow"]
                 self.counters[arm].last["elbow3d"] = meas3d["elbow"] if meas3d is not None else None

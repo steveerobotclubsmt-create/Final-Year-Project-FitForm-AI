@@ -141,8 +141,11 @@ def main():
             palms = dict(hands.palms) if hands else None
             if side:
                 side_label = side_job.result() if side_job else side.process()
-                if palms is not None:
-                    palms[args.side_arm] = side_label   # the side camera decides this arm's palm direction
+                if palms is not None and palms.get(args.side_arm) == "back":
+                    # the front camera reads a correct palm-to-body FIST as 'backward' most of the time
+                    # (calibration 20 Oct: 35 of 54 readings), so for this arm the front camera only vetoes
+                    # on 'outward'; the side camera judges outward AND backward
+                    palms[args.side_arm] = "side"
                 if hand_states is not None and side.state is not None:
                     hand_states = dict(hand_states)
                     hand_states[args.side_arm] = side.state   # ... and whether that hand is clenched / gripping
@@ -150,7 +153,8 @@ def main():
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
                                             hand_points=hands.points if hands else None,
-                                            palms=palms)
+                                            palms=palms,
+                                            side_palms={args.side_arm: side.label} if side else None)
             if args.debug and now - last_dbg >= 0.5:
                 last_dbg = now
                 print(f"FPS {fps:.1f}")

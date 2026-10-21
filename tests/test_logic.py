@@ -181,6 +181,22 @@ def grip_hand(bend_deg):
     return pts
 
 
+def test_side_camera_turned_out_rejects_rep():
+    """Side camera has the same say as the front: 'turned out' during the rep = not counted."""
+    config.PALM_CHECK = True
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, palm="front", side_palm="outward")
+    c.update(m(130), 0.3, palm="front", side_palm="outward")
+    c.update(m(90), 0.6, palm="front", side_palm="outward")
+    assert c.update(m(35), 0.9, palm="front", side_palm="outward") == "rejected"
+    assert c.last_reasons == ["palm turned outward or backward"]
+    c.update(m(170), 2.0, palm="front", side_palm="front")      # good rep: side camera says ok
+    c.update(m(170), 2.1, palm="front", side_palm="front")
+    c.update(m(90), 2.6, palm="front", side_palm="side")        # unclear readings are not judged
+    assert c.update(m(35), 2.9, palm="front", side_palm="front") == "counted"
+    config.PALM_CHECK = False
+
+
 def test_bottle_grip_counts_as_clenched():
     assert classify_hand(grip_hand(90)) == "fist"         # wrapped round a bottle
     assert classify_hand(grip_hand(15)) == "open"         # relaxed, nearly straight fingers
