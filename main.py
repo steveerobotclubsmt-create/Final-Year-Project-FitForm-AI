@@ -8,6 +8,7 @@ Examples:
   python main.py --weight 65          # set body weight for the calorie estimate
   python main.py --debug --angles 2d  # print live angles; compare 2D and 3D elbow angles
   python main.py --camera picam --rotate 180   # camera mounted upside down
+  python main.py --camera picam --rotate 180 --side-camera 0   # + webcam at your right side for the palm
 """
 
 import argparse
@@ -43,6 +44,11 @@ def parse_args():
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
     p.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=0,
                    help="rotate the camera picture (e.g. 180 for a camera mounted upside down)")
+    p.add_argument("--side-camera", help="second camera at your side (e.g. 0 for the USB webcam) that judges the palm")
+    p.add_argument("--side-arm", choices=["right", "left"], default="right",
+                   help="which arm the side camera is next to (default right)")
+    p.add_argument("--side-rotate", type=int, choices=[0, 90, 180, 270], default=0,
+                   help="rotate the side camera picture")
     return p.parse_args()
 
 
@@ -81,10 +87,22 @@ def main():
     if config.FLASK_ENABLED and not args.no_server:
         start_server(logger)
 
+    side = None
+    if args.side_camera is not None and config.PALM_CHECK:
+        from fitform.side_palm import SidePalmChecker
+        ssrc = "picam" if args.side_camera.lower() == "picam" else int(args.side_camera)
+        sstream = CameraStream(ssrc, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT)
+        if not sstream.is_opened():
+            print(f"ERROR: could not open the side camera {ssrc!r}")
+            return
+        sstream.start()
+        side = SidePalmChecker(sstream, args.side_arm, args.side_rotate)
+        print(f"Side camera {ssrc!r}: judges the {args.side_arm} palm")
+
     pool = None
     if hands and config.PARALLEL_HANDS:
         from concurrent.futures import ThreadPoolExecutor
-        pool = ThreadPoolExecutor(max_workers=1)
+        pool = ThreadPoolExecutor(max_workers=2 if side else 1)
     prev_landmarks = None
     cam_w = int(stream.cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     cam_h = int(stream.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
@@ -110,6 +128,7 @@ def main():
                 frame = cv2.rotate(frame, rotate_code)   # camera mounted upside down / sideways
             if frame.shape[1] != W or frame.shape[0] != H:
                 frame = cv2.resize(frame, (W, H))
+            side_job = pool.submit(side.process) if (side and pool) else None
             if hands and pool:
                 # hands run on a second core at the same time as pose; they are matched to the arms
                 # using the pose from the previous frame (the arm hardly moves in 1/15 s)
@@ -119,11 +138,16 @@ def main():
             else:
                 landmarks = engine.process(frame)
                 hand_states = hands.process(frame, landmarks) if hands else None
+            palms = dict(hands.palms) if hands else None
+            if side:
+                side_label = side_job.result() if side_job else side.process()
+                if palms is not None:
+                    palms[args.side_arm] = side_label   # the side camera decides this arm's palm direction
             prev_landmarks = landmarks
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
                                             hand_points=hands.points if hands else None,
-                                            palms=hands.palms if hands else None)
+                                            palms=palms)
             if args.debug and now - last_dbg >= 0.5:
                 last_dbg = now
                 print(f"FPS {fps:.1f}")
@@ -136,7 +160,9 @@ def main():
                           f"3D {fmt(d.get('elbow3d'))}) drift {fmt(d['drift'])} tilt {fmt(d.get('tilt'))} "
                           f"len {'-' if lr is None else f'{lr:.2f}'} wrist {fmt(d['wrist_angle'])} "
                           f"hand {d['hand'] or '-'} palm {d.get('palm') or '-'}"
-                          f"{'' if ps is None else f' (front {ps[0]:+.2f} inward {ps[1]:+.2f})'} stage {c.stage or '-'} ready {c.ready}")
+                          f"{'' if ps is None else f' (front {ps[0]:+.2f} inward {ps[1]:+.2f})'}"
+                          f"{f' side {side.label or chr(45)} ({side.score:+.2f})' if (side and arm == args.side_arm and side.score is not None) else ''}"
+                          f" stage {c.stage or '-'} ready {c.ready}")
             for arm, event in events:
                 cnt = feedback.counters[arm]
                 ut = cnt.last_up_time
@@ -161,6 +187,8 @@ def main():
                 for arm, pts in drawn.items():
                     draw_arm(image, pts, feedback.counters[arm], show_angle=args.debug_screen)
                 draw_hud(image, feedback, calories.calories(now), calories.active_seconds(now), fps)
+                if side:
+                    side.draw_preview(image)
                 if args.debug_screen:
                     draw_debug(image, feedback)
                 cv2.imshow("FitForm AI - Bicep Curl", image)

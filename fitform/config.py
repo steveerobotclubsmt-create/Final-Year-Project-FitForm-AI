@@ -57,6 +57,9 @@ PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else i
 PALM_HOLD_SECONDS = 0.5      # hand turned outward/backward continuously this long during the lift = not counted
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
+SIDE_EVERY_N = 2             # side camera (--side-camera): judge the palm every N frames
+SIDE_PALM_SIGN = -1          # flip to 1 if the side preview says 'turned out' when your palm faces your body
+SIDE_PALM_MIN = 0.3          # 0..1 how clear the side reading must be; weaker = 'unclear' (not judged)
 HAND_EVERY_N = 2             # run hand detection every N frames (1 = every frame; 2 = faster)
 PARALLEL_HANDS = True        # run hand detection at the same time as pose detection (uses a second CPU core)
 HAND_MODEL_COMPLEXITY = 0    # 0 = fastest
