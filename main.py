@@ -19,7 +19,7 @@ import cv2
 from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
-from fitform.display_ui import draw_arm, draw_debug, draw_hud
+from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
@@ -44,6 +44,7 @@ def parse_args():
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
     p.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=0,
                    help="rotate the camera picture (e.g. 180 for a camera mounted upside down)")
+    p.add_argument("--no-demo", action="store_true", help="skip the start-up demo animation")
     p.add_argument("--side-camera", help="second camera at your side (e.g. 0 for the USB webcam) that judges the palm")
     p.add_argument("--side-arm", choices=["right", "left"], default="right",
                    help="which arm the side camera is next to (default right)")
@@ -90,7 +91,8 @@ def main():
     side = None
     if args.side_camera is not None and config.PALM_CHECK:
         from fitform.side_palm import SidePalmChecker
-        ssrc = "picam" if args.side_camera.lower() == "picam" else int(args.side_camera)
+        sc = args.side_camera
+        ssrc = "picam" if sc.lower() == "picam" else (int(sc) if sc.isdigit() else sc)   # a file path works for testing
         sstream = CameraStream(ssrc, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT)
         if not sstream.is_opened():
             print(f"ERROR: could not open the side camera {ssrc!r}")
@@ -114,6 +116,8 @@ def main():
                    270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(args.rotate)
     last_dbg = 0.0
     fps, fps_t, fps_n = 0.0, time.time(), 0
+    start_t = time.time()
+    demo_on = not args.no_demo and not args.headless and config.DEMO_SECONDS > 0
 
     try:
         while not stream.finished:
@@ -140,7 +144,10 @@ def main():
                 hand_states = hands.process(frame, landmarks) if hands else None
             palms = dict(hands.palms) if hands else None
             if side:
-                side_label = side_job.result() if side_job else side.process()
+                if side_job:
+                    side_job.result()
+                else:
+                    side.process()
                 if side.state is not None and hand_states is not None:
                     # fist: clenched if EITHER camera sees a fist - a fist one camera sees badly (small, at an
                     # angle) must not fail the rep; an open hand is still caught when neither sees a fist
@@ -183,9 +190,13 @@ def main():
                     gpio.beep()
                     tip = " [tip: palm looked turned out]" if feedback.counters[arm].palm_tip else ""
                     print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted{lift}{tip}")
+                    if feedback.counters[arm].outward_alert:
+                        print(f"! {arm.capitalize()}: fist turned outward {config.OUTWARD_STREAK} reps in a row - paused")
                 else:
                     why = ", ".join(feedback.counters[arm].last_reasons) or "bad form"
                     print(f"x {arm.capitalize()} rep NOT counted - {why}{lift}")
+                if feedback.counters[arm].outward_alert and event != "counted":
+                    print(f"! {arm.capitalize()}: fist turned outward {config.OUTWARD_STREAK} reps in a row - paused")
             gpio.show_form(feedback.overall_form_ok())
 
             fps_n += 1
@@ -202,6 +213,13 @@ def main():
                     side.draw_preview(image)
                 if args.debug_screen:
                     draw_debug(image, feedback)
+                if demo_on:
+                    el = now - start_t
+                    ready = any(c.ready for c in feedback.counters.values())
+                    if el >= config.DEMO_SECONDS or (el >= config.DEMO_MIN_SECONDS and ready):
+                        demo_on = False
+                    else:
+                        draw_demo(image, el, config.DEMO_SECONDS - el)
                 cv2.imshow("FitForm AI - Bicep Curl", image)
 
                 key = cv2.waitKey(1) & 0xFF

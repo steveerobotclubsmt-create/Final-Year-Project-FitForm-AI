@@ -94,7 +94,10 @@ class FeedbackEngine:
         # A rep that just finished: say whether it counted (and why not).
         for arm, event in events:
             c = self.counters[arm]
-            if event == "counted":
+            if c.outward_alert:
+                self.message = f"{arm.upper()}: Your fist is facing outward\nTurn your palm to face your body"
+                self.message_color = ORANGE
+            elif event == "counted":
                 if c.palm_tip:
                     self.message = f"{arm.upper()}: Counted\nTip: keep your palm facing your body"
                 else:
@@ -107,7 +110,11 @@ class FeedbackEngine:
         if now is not None:
             for arm, c in self.counters.items():
                 if now < c.blocked_until:
-                    self.message, self.message_color = self._reject_message(arm), RED
+                    if c.outward_alert:
+                        self.message = f"{arm.upper()}: Your fist is facing outward\nTurn your palm to face your body"
+                        self.message_color = ORANGE
+                    else:
+                        self.message, self.message_color = self._reject_message(arm), RED
                     return
         # Otherwise the most urgent live problem on any visible arm. An arm that has not started (for
         # example holding the phone) is ignored while the other arm is exercising.

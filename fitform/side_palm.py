@@ -6,7 +6,6 @@ reading splits the positions into {towards body, backward} vs {forward, outward}
 the side, the same reading splits them into {towards body, forward} (correct) vs {outward, backward}
 (wrong) - exactly the rule we need. It uses only the 2D picture, not MediaPipe's unreliable depth."""
 
-import math
 import time
 
 import cv2

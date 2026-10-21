@@ -64,6 +64,10 @@ PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when th
 PALM_REJECTS = False         # False = palm/fist direction only gives a tip ("Keep your palm facing your body"),
                              # the rep still counts. The labelled runs of 21 Oct showed the same correct right-arm
                              # curl reading anywhere from 0 to +-1.0, so it is not reliable enough to fail a rep.
+OUTWARD_STREAK = 3           # this many reps in a row with the fist turned out (front OR side camera) ...
+OUTWARD_PAUSE_SECONDS = 3.0  # ... pauses counting this long with 'Your fist is facing outward'
+DEMO_SECONDS = 8.0           # demo animation at the start (skipped after DEMO_MIN_SECONDS once you hold your
+DEMO_MIN_SECONDS = 3.0       # arm straight); --no-demo turns it off
 FIST_PALM_TO_BODY = True     # front camera, clenched fist: palm must face the body; turned outward OR palm
                              # forward = wrong (from the front these two look the same for a fist)
 FIST_CALIB_FILE = "~/fist_calib.json"  # from tools/fist_calibrate.py (labelled runs); used when present

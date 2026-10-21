@@ -24,6 +24,7 @@ config.FAULT_HOLD_SECONDS = 0.0      # faults count at once here; the hold time 
 config.HAND_MIN_READINGS = 1
 config.REJECT_PAUSE_SECONDS = 0.0   # the pause after a rejected rep has its own test
 config.PALM_REJECTS = True          # the palm rules are tested as rejections; tip-only mode has its own test
+config.OUTWARD_STREAK = 99          # the 'fist facing outward' streak pause has its own test
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -266,6 +267,38 @@ def test_palm_tip_only_mode_still_counts():
     c.update(m(90), 2.5, palm="side")
     assert c.update(m(35), 2.9, palm="side") == "counted" and c.palm_tip is False
     config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = False, True, 0.0
+
+
+def test_three_outward_reps_in_a_row_pause():
+    """Tip-only mode: reps still count, but the 3rd turned-out rep in a row pauses with a warning."""
+    config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = True, False, 0.3
+    config.OUTWARD_STREAK, config.OUTWARD_PAUSE_SECONDS = 3, 3.0
+    c = BicepCurlCounter("left", alpha=1.0)
+    t = 0.0
+    for rep in range(3):
+        for _ in range(3):
+            c.update(m(171), t, palm="outward"); t += 0.1
+        c.update(m(120), t, palm="side"); t += 0.3
+        assert c.update(m(35), t, palm="side") == "counted"; t += 0.5
+        assert c.outward_alert is (rep == 2)
+    assert c.count == 3 and c.blocked_until > t           # paused after the 3rd
+    c.update(m(171), t, palm="inward"); c.update(m(90), t + 0.4); c.update(m(35), t + 0.8)
+    assert c.count == 3                                     # nothing counts during the pause
+    t += 3.5                                                # after the pause: a correct rep resets the streak
+    for _ in range(3):
+        c.update(m(171), t, palm="inward"); t += 0.1
+    c.update(m(120), t, palm="side"); t += 0.3
+    assert c.update(m(35), t, palm="side") == "counted" and not c.outward_alert and c.palm_streak == 0
+    config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = False, True, 0.0
+    config.OUTWARD_STREAK = 99
+
+
+def test_demo_draws():
+    import numpy as np
+    from fitform.display_ui import draw_demo
+    img = np.zeros((600, 800, 3), np.uint8)
+    draw_demo(img, 1.3, 5.0)
+    assert img.sum() > 0
 
 
 def test_bottle_grip_counts_as_clenched():
