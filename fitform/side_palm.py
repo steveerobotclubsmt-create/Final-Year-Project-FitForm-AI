@@ -12,7 +12,7 @@ import time
 import cv2
 
 from . import config
-from .hand_state import palm_direction
+from .hand_state import classify_hand, palm_direction
 
 
 class SidePalmChecker:
@@ -31,6 +31,7 @@ class SidePalmChecker:
         self._last_id = -1
         self.label = None        # 'front' (correct: forward or towards the body) | 'outward' (wrong) | 'side'
         self.score = None        # > 0 correct, < 0 wrong
+        self.state = None        # 'fist' (clenched or gripping a bottle) | 'open' | 'partial' | None (not seen)
         self.frame = None        # last side picture with the hand drawn, for the small preview
         self.seen_at = 0.0
 
@@ -51,11 +52,29 @@ class SidePalmChecker:
         res = self.hands.process(rgb)
         hands = res.multi_hand_landmarks or []
         if hands:
+            # MediaPipe's own left/right guess; it assumes a mirrored picture, so in the camera's own
+            # (un-mirrored) picture the person's RIGHT hand is labelled "Left"
+            want = "Left" if self.arm == "right" else "Right"
+            labels = []
+            for k in range(len(hands)):
+                try:
+                    cl = res.multi_handedness[k].classification[0]
+                    labels.append((cl.label, cl.score))
+                except (IndexError, TypeError, AttributeError):
+                    labels.append((None, 0.0))
+
             def area(hl):
                 xs = [p.x for p in hl.landmark]
                 ys = [p.y for p in hl.landmark]
                 return (max(xs) - min(xs)) * (max(ys) - min(ys))
-            b = max(hands, key=area).landmark      # the nearest (biggest) hand = the arm next to the camera
+            # the arm next to the camera: its hand is the bigger one and should carry the right label;
+            # a lone hand confidently labelled as the OTHER hand is the far arm, so it is not used
+            cands = [(area(hl) * (2.0 if lab == want else 1.0), k) for k, (hl, (lab, sc)) in
+                     enumerate(zip(hands, labels)) if not (len(hands) == 1 and lab not in (None, want) and sc > 0.8)]
+            hands = [hands[max(cands)[1]]] if cands else []
+        if hands:
+            b = hands[0].landmark
+            self.state = classify_hand(b, w, h)
             front = palm_direction(b, self.arm, w, h)[1]
             self.score = config.SIDE_PALM_SIGN * front
             if self.score > config.SIDE_PALM_MIN:
@@ -69,6 +88,7 @@ class SidePalmChecker:
                 cv2.circle(frame, (int(p.x * w), int(p.y * h)), 3, (0, 255, 255), -1)
         elif time.time() - self.seen_at > 0.5:
             self.label, self.score = "side", None   # hand not seen by the side camera: do not judge
+            self.state = None                        # (the front camera's fist reading is used instead)
         self.frame = frame
         return self.label
 
@@ -86,6 +106,8 @@ class SidePalmChecker:
         cv2.rectangle(image, (x, y), (x + pw, y + ph), col, 3)
         txt = "SIDE: palm ok" if self.label == "front" else ("SIDE: turned out" if self.label == "outward"
                                                               else "SIDE: unclear")
+        if self.state:
+            txt += " | fist" if self.state == "fist" else " | not clenched"
         cv2.putText(image, txt, (x + 4, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
 
     def close(self):

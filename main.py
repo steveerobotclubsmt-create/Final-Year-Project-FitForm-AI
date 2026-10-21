@@ -143,6 +143,9 @@ def main():
                 side_label = side_job.result() if side_job else side.process()
                 if palms is not None:
                     palms[args.side_arm] = side_label   # the side camera decides this arm's palm direction
+                if hand_states is not None and side.state is not None:
+                    hand_states = dict(hand_states)
+                    hand_states[args.side_arm] = side.state   # ... and whether that hand is clenched / gripping
             prev_landmarks = landmarks
             image = cv2.flip(frame, 1)             # show mirrored, like a mirror
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
