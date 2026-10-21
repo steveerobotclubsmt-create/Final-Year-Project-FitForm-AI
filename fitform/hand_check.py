@@ -6,7 +6,7 @@ import math
 import cv2
 
 from . import config
-from .hand_state import classify_hand, fist_turn_score, palm_direction
+from .hand_state import classify_hand, curled_fingers, fist_turn_score, palm_direction
 from . import fist_calib
 
 POSE_WRIST = {"right": 16, "left": 15}
@@ -29,6 +29,7 @@ class HandChecker:
         self.palms = {"right": None, "left": None}    # 'front' | 'back' | 'side' | None
         self.palm_scores = {"right": None, "left": None}   # (front, inward), each -1..1
         self.hand_landmarks = []
+        self.curls = {"right": None, "left": None}
         self.fist_calib = fist_calib.load(config.FIST_CALIB_FILE) if config.FIST_CALIB_FILE else None
 
     def process(self, frame_bgr, pose_landmarks):
@@ -45,6 +46,7 @@ class HandChecker:
         states = {"right": None, "left": None}
         points = {"right": None, "left": None}
         palms = {"right": None, "left": None}
+        curls = {"right": None, "left": None}
         scores = {"right": None, "left": None}
         if pose_landmarks is not None and self.hand_landmarks:
             lm = pose_landmarks.landmark
@@ -66,6 +68,7 @@ class HandChecker:
                 used_hands.add(k)
                 b = self.hand_landmarks[k].landmark
                 states[arm] = classify_hand(b, w, h)
+                curls[arm] = curled_fingers(b, w, h)
                 points[arm] = ((b[0].x * w, b[0].y * h), (b[9].x * w, b[9].y * h))
                 label, front, inward = palm_direction(b, arm, w, h, config.PALM_SIGN, config.PALM_MIN_SCORE,
                                                       config.PALM_INWARD_SIGN, config.PALM_BAD_MIN_SCORE)
@@ -81,6 +84,7 @@ class HandChecker:
         self.states = states
         self.points = points
         self.palms = palms
+        self.curls = curls           # curled fingers per hand (0-4), for --debug
         self.palm_scores = scores
         return states
 

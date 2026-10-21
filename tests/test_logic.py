@@ -293,12 +293,45 @@ def test_three_outward_reps_in_a_row_pause():
     config.OUTWARD_STREAK = 99
 
 
+def test_outward_warning_survives_one_missed_rep():
+    """Turned out, turned out, (cameras read it as fine), turned out -> still 3 of the last 4."""
+    config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = True, False, 0.3
+    config.OUTWARD_STREAK, config.OUTWARD_WINDOW = 3, 4
+    c = BicepCurlCounter("left", alpha=1.0)
+    t = 0.0
+    for i, p in enumerate(("outward", "outward", "inward", "outward")):
+        for _ in range(3):
+            c.update(m(171), t, palm=p); t += 0.1
+        c.update(m(120), t, palm="side"); t += 0.3
+        c.update(m(35), t, palm="side"); t += 0.5
+        assert c.outward_alert is (i == 3)
+    config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = False, True, 0.0
+    config.OUTWARD_STREAK = 99
+
+
 def test_demo_draws():
     import numpy as np
     from fitform.display_ui import draw_demo
     img = np.zeros((600, 800, 3), np.uint8)
     draw_demo(img, 1.3, 5.0)
     assert img.sum() > 0
+
+
+def test_forearm_pointing_at_camera_does_not_end_the_rep():
+    """Mid-lift the forearm points at the camera and the 2D angle can jump to ~5 deg for a few frames."""
+    config.TOP_CONFIRM_FRAMES, config.MIN_UP_SECONDS = 2, 0.3
+    def mm(e, fore):
+        d = m(e)
+        d["upper_len"], d["forearm_len"] = 100.0, fore
+        return d
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(mm(170, 100), 0.0)
+    c.update(mm(120, 70), 0.1)
+    assert c.update(mm(5, 30), 0.15) is None          # squashed forearm: angle jump ignored ...
+    assert c.update(mm(5, 25), 0.2) is None
+    c.update(mm(40, 90), 0.5)
+    assert c.update(mm(35, 92), 0.6) == "counted"     # ... the real top 0.6 s later counts (not 'too fast')
+    config.TOP_CONFIRM_FRAMES, config.MIN_UP_SECONDS = 1, 0.0
 
 
 def test_bottle_grip_counts_as_clenched():

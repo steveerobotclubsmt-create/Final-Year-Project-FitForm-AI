@@ -10,8 +10,8 @@ FINGERS = ((8, 6), (12, 10), (16, 14), (20, 18))
 # (MCP, PIP, tip) for index, middle, ring and little finger
 FINGER_JOINTS = ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))
 GRIP_BEND_MIN = 60     # degrees: a finger bent at least this much (3D) is wrapped round something
-GRIP_MIN_FINGERS = 2   # this many curled / clearly bent fingers = gripping (a hand round a bottle often
-                       # shows only 2 clearly bent fingers to the camera; a flat open hand shows 0-1)
+GRIP_MIN_FINGERS = 2   # this many curled / clearly bent fingers = gripping (a hand round a bottle often shows
+                       # only 2 clearly bent fingers; with 2 every bottle rep counted in the 21 Oct runs)
 
 
 def finger_bend(landmarks, mcp, pip, tip, width=1.0, height=1.0):
@@ -28,22 +28,25 @@ def finger_bend(landmarks, mcp, pip, tip, width=1.0, height=1.0):
     return math.degrees(math.acos(c))
 
 
-def classify_hand(landmarks, width=1.0, height=1.0):
-    """Returns 'fist', 'open' or 'partial'. 'fist' also covers a hand gripping a bottle or dumbbell handle.
-    A finger counts as curled when its tip is closer to the wrist than its middle (PIP) joint is (tight fist),
-    or when it is bent at least GRIP_BEND_MIN degrees (fingers wrapped round a bottle: the tips stay
-    further out than the PIP joints, so the first test alone said 'not clenched')."""
+def curled_fingers(landmarks, width=1.0, height=1.0):
+    """How many of the 4 fingers are curled (tip folded in) or clearly bent round something."""
     pts = [(p.x * width, p.y * height) for p in landmarks]
     wrist = pts[0]
 
     def dist(a, b):
         return math.hypot(a[0] - b[0], a[1] - b[1])
 
-    curled = 0
-    for (tip, pip), (m, p, t) in zip(FINGERS, FINGER_JOINTS):
-        if dist(pts[tip], wrist) < dist(pts[pip], wrist) or \
-                finger_bend(landmarks, m, p, t, width, height) >= GRIP_BEND_MIN:
-            curled += 1
+    return sum(1 for (tip, pip), (m, p, t) in zip(FINGERS, FINGER_JOINTS)
+               if dist(pts[tip], wrist) < dist(pts[pip], wrist)
+               or finger_bend(landmarks, m, p, t, width, height) >= GRIP_BEND_MIN)
+
+
+def classify_hand(landmarks, width=1.0, height=1.0):
+    """Returns 'fist', 'open' or 'partial'. 'fist' also covers a hand gripping a bottle or dumbbell handle.
+    A finger counts as curled when its tip is closer to the wrist than its middle (PIP) joint is (tight fist),
+    or when it is bent at least GRIP_BEND_MIN degrees (fingers wrapped round a bottle: the tips stay
+    further out than the PIP joints, so the first test alone said 'not clenched')."""
+    curled = curled_fingers(landmarks, width, height)
     if curled >= GRIP_MIN_FINGERS:
         return "fist"
     if curled <= 1:

@@ -49,6 +49,8 @@ class FeedbackEngine:
                 sx, sy = pts["shoulder"]
                 ex, ey = pts["elbow"]
                 meas["upper_len"] = ((ex - sx) ** 2 + (ey - sy) ** 2) ** 0.5
+                wx_, wy_ = pts["wrist"]
+                meas["forearm_len"] = ((wx_ - ex) ** 2 + (wy_ - ey) ** 2) ** 0.5
                 meas["upper_vec2d"] = [ex - sx, ey - sy]
                 # Wrist straightness: forearm vs the middle knuckle from MediaPipe Hands. The pose model's
                 # "index" point folds into the palm when you make a fist, so it is not used for this.

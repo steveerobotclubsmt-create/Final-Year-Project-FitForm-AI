@@ -176,10 +176,10 @@ def main():
                     print(f"[{arm[0].upper()}] elbow {fmt(d['elbow_angle'])} (2D {fmt(d.get('elbow2d'))} / "
                           f"3D {fmt(d.get('elbow3d'))}) drift {fmt(d['drift'])} tilt {fmt(d.get('tilt'))} "
                           f"len {'-' if lr is None else f'{lr:.2f}'} wrist {fmt(d['wrist_angle'])} "
-                          f"hand {d['hand'] or '-'} palm {d.get('palm') or '-'}"
+                          f"hand {d['hand'] or '-'}{'' if not hands or hands.curls.get(arm) is None else f' ({hands.curls[arm]}/4 fingers)'} palm {d.get('palm') or '-'}"
                           f"{'' if ps is None else f' (front {ps[0]:+.2f} inward {ps[1]:+.2f})'}"
                           f"{f' side {side.label or chr(45)} ({side.score:+.2f})' if (side and arm == args.side_arm and side.score is not None) else ''}"
-                          f" stage {c.stage or '-'} ready {c.ready}")
+                          f"{' FORESHORTENED' if d.get('foreshortened') else ''} stage {c.stage or '-'} ready {c.ready}")
             for arm, event in events:
                 cnt = feedback.counters[arm]
                 ut = cnt.last_up_time
@@ -191,12 +191,12 @@ def main():
                     tip = " [tip: palm looked turned out]" if feedback.counters[arm].palm_tip else ""
                     print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted{lift}{tip}")
                     if feedback.counters[arm].outward_alert:
-                        print(f"! {arm.capitalize()}: fist turned outward {config.OUTWARD_STREAK} reps in a row - paused")
+                        print(f"! {arm.capitalize()}: fist turned outward in {config.OUTWARD_STREAK} of the last {config.OUTWARD_WINDOW} reps - paused")
                 else:
                     why = ", ".join(feedback.counters[arm].last_reasons) or "bad form"
                     print(f"x {arm.capitalize()} rep NOT counted - {why}{lift}")
                 if feedback.counters[arm].outward_alert and event != "counted":
-                    print(f"! {arm.capitalize()}: fist turned outward {config.OUTWARD_STREAK} reps in a row - paused")
+                    print(f"! {arm.capitalize()}: fist turned outward in {config.OUTWARD_STREAK} of the last {config.OUTWARD_WINDOW} reps - paused")
             gpio.show_form(feedback.overall_form_ok())
 
             fps_n += 1
@@ -215,11 +215,13 @@ def main():
                     draw_debug(image, feedback)
                 if demo_on:
                     el = now - start_t
-                    ready = any(c.ready for c in feedback.counters.values())
-                    if el >= config.DEMO_SECONDS or (el >= config.DEMO_MIN_SECONDS and ready):
+                    if el >= config.DEMO_SECONDS:
                         demo_on = False
+                        feedback.reset()          # anything done during the demo is not counted
+                        calories.reset()
+                        print("Demo finished - go!")
                     else:
-                        draw_demo(image, el, config.DEMO_SECONDS - el)
+                        draw_demo(image, el, config.DEMO_SECONDS - el + 0.5)
                 cv2.imshow("FitForm AI - Bicep Curl", image)
 
                 key = cv2.waitKey(1) & 0xFF

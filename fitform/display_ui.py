@@ -134,7 +134,7 @@ def draw_demo(image, t, seconds_left):
              "4. Lift and lower steadily",
              "   (about 1 second each way)",
              "5. Straighten your arm fully at the bottom"]
-    last = f"Hold your arm straight to start  ({seconds_left:.0f})"
+    last = f"Get ready - starting in {max(1, int(seconds_left))}"
     widest = max(cv2.getTextSize(r, FONT, 1.0, 2)[0][0] for r in rules + [last])
     fs = min(0.6, (w - x0 - 12) / widest)          # shrink the text so it always fits the window
     for i, r in enumerate(rules):

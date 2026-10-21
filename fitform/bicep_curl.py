@@ -138,7 +138,8 @@ class BicepCurlCounter:
         self._hand_log = []        # (time, hand state, palm direction, elbow angle)
         self.blocked_until = 0.0   # after a rejected rep: no new rep until the user has read what was wrong
         self.palm_tip = False      # palm looked turned out during the last rep (advice only, see PALM_REJECTS)
-        self.palm_streak = 0       # completed reps in a row where a camera saw the fist turned out
+        self.palm_streak = 0       # recent completed reps where a camera saw the fist turned out
+        self._palm_hist = []       # turned out yes/no for the last OUTWARD_WINDOW reps
         self.outward_alert = False # True while the 'fist facing outward' pause is on
         self.reject_key = None     # main reason of the last rejected rep (for the 'what to do' hint)
         self._side_log = []        # (time, side-camera palm label) - only when a side camera is used
@@ -301,7 +302,12 @@ class BicepCurlCounter:
             if self._reasons - ({"palm_dir"} if not config.PALM_REJECTS else set()):
                 self.form_ok = False
 
-        self._top_frames = self._top_frames + 1 if elbow < config.UP_ANGLE else 0
+        # forearm pointing at the camera (mid-lift, facing it): the 2D picture squashes it and the 2D elbow
+        # angle jumps (seen 21 Oct: 106 deg read as 2), which ended reps early as 'too fast' - such frames
+        # cannot be the top of the rep
+        fl, ul = m.get("forearm_len"), m.get("upper_len")
+        foreshortened = bool(fl is not None and ul and fl < config.FORESHORTEN_RATIO * ul)
+        self._top_frames = self._top_frames + 1 if (elbow < config.UP_ANGLE and not foreshortened) else 0
         # Curled again without straightening the arm in between: tell the user instead of staying silent.
         if self.stage == "up" and now < self.blocked_until:
             self._rose_since_top = False           # pause after a rejected rep: nothing is judged
@@ -347,8 +353,11 @@ class BicepCurlCounter:
             if up_time is not None and up_time > config.MAX_UP_SECONDS:
                 self._reasons.add("slow")
             # several reps in a row with the fist turned out (either camera): pause and tell the user
-            self.palm_streak = self.palm_streak + 1 if "palm_dir" in self._reasons else 0
+            # (3 of the last 4 reps, so one rep the cameras happened to read as fine does not reset it)
+            self._palm_hist = (self._palm_hist + ["palm_dir" in self._reasons])[-config.OUTWARD_WINDOW:]
+            self.palm_streak = sum(self._palm_hist)
             if config.PALM_CHECK and self.palm_streak >= config.OUTWARD_STREAK:
+                self._palm_hist = []
                 self.palm_streak = 0
                 self.outward_alert = True
                 self.blocked_until = max(self.blocked_until, now + config.OUTWARD_PAUSE_SECONDS)
@@ -373,7 +382,7 @@ class BicepCurlCounter:
             "elbow_angle": elbow, "drift": drift, "wrist_angle": wrist, "hand": hand, "palm": palm,
             "elbow_swinging": elbow_swinging, "wrist_bent": wrist_bent, "hand_open": hand_open,
             "palm_away": palm_away, "not_extended": not_extended, "not_ready": not self.ready,
-            "tilt": tilt, "len_ratio": len_ratio, "arm_tilted": arm_tilted, "arm_forward": arm_forward,
+            "tilt": tilt, "len_ratio": len_ratio, "foreshortened": foreshortened, "arm_tilted": arm_tilted, "arm_forward": arm_forward,
         }
         return event
 
