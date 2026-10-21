@@ -7,6 +7,7 @@ Examples:
   python main.py --video test.mp4     # run on a recorded video instead of a camera
   python main.py --weight 65          # set body weight for the calorie estimate
   python main.py --debug --angles 2d  # print live angles; compare 2D and 3D elbow angles
+  python main.py --camera picam --rotate 180   # camera mounted upside down
 """
 
 import argparse
@@ -40,6 +41,8 @@ def parse_args():
     p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
     p.add_argument("--debug-screen", action="store_true", help="also show the tuning numbers on the video window")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
+    p.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=0,
+                   help="rotate the camera picture (e.g. 180 for a camera mounted upside down)")
     return p.parse_args()
 
 
@@ -89,6 +92,8 @@ def main():
           f"hands every {config.HAND_EVERY_N} frame(s){' in parallel' if pool else ''}")
     print("Starting... Press Q to quit, R to reset")
     last_id = -1
+    rotate_code = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
+                   270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(args.rotate)
     last_dbg = 0.0
     fps, fps_t, fps_n = 0.0, time.time(), 0
 
@@ -101,6 +106,8 @@ def main():
             last_id = frame_id
 
             now = time.time()
+            if rotate_code is not None:
+                frame = cv2.rotate(frame, rotate_code)   # camera mounted upside down / sideways
             if frame.shape[1] != W or frame.shape[0] != H:
                 frame = cv2.resize(frame, (W, H))
             if hands and pool:
