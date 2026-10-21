@@ -10,6 +10,8 @@ FINGERS = ((8, 6), (12, 10), (16, 14), (20, 18))
 # (MCP, PIP, tip) for index, middle, ring and little finger
 FINGER_JOINTS = ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))
 GRIP_BEND_MIN = 60     # degrees: a finger bent at least this much (3D) is wrapped round something
+GRIP_MIN_FINGERS = 2   # this many curled / clearly bent fingers = gripping (a hand round a bottle often
+                       # shows only 2 clearly bent fingers to the camera; a flat open hand shows 0-1)
 
 
 def finger_bend(landmarks, mcp, pip, tip, width=1.0, height=1.0):
@@ -42,7 +44,7 @@ def classify_hand(landmarks, width=1.0, height=1.0):
         if dist(pts[tip], wrist) < dist(pts[pip], wrist) or \
                 finger_bend(landmarks, m, p, t, width, height) >= GRIP_BEND_MIN:
             curled += 1
-    if curled >= 3:
+    if curled >= GRIP_MIN_FINGERS:
         return "fist"
     if curled <= 1:
         return "open"

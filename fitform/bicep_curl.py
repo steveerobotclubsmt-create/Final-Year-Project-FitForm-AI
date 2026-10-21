@@ -138,6 +138,7 @@ class BicepCurlCounter:
         self._fault_since = {}
         self._hand_log = []        # (time, hand state, palm direction, elbow angle)
         self.blocked_until = 0.0   # after a rejected rep: no new rep until the user has read what was wrong
+        self.palm_tip = False      # palm looked turned out during the last rep (advice only, see PALM_REJECTS)
         self.reject_key = None     # main reason of the last rejected rep (for the 'what to do' hint)
         self._side_log = []        # (time, side-camera palm label) - only when a side camera is used
         self._rose_since_top = False   # arm went back down after the top without becoming straight
@@ -279,6 +280,7 @@ class BicepCurlCounter:
             self._start_checked = False
             self._rose_since_top = False
             self._lift_palm = [0, 0]
+            self.palm_tip = False
             self.stage = "down"
 
         if self.stage == "down" and not straight_raw:
@@ -294,7 +296,7 @@ class BicepCurlCounter:
                             ("palm_dir", palm_away), ("hand_hidden", hand_hidden)):
                 if self._hold(key, on, now):
                     self._reasons.add(key)
-            if self._reasons:
+            if self._reasons - ({"palm_dir"} if not config.PALM_REJECTS else set()):
                 self.form_ok = False
 
         self._top_frames = self._top_frames + 1 if elbow < config.UP_ANGLE else 0
@@ -342,6 +344,11 @@ class BicepCurlCounter:
                 self._reasons.add("fast")
             if up_time is not None and up_time > config.MAX_UP_SECONDS:
                 self._reasons.add("slow")
+            if not config.PALM_REJECTS and "palm_dir" in self._reasons:
+                # palm direction is advice only (21 Oct: the front camera's fist-direction reading is not
+                # consistent enough to fail a rep) - the rep can still count, with a tip on screen
+                self._reasons.discard("palm_dir")
+                self.palm_tip = True
             self.form_ok = not self._reasons
             if self.form_ok:
                 self.count += 1

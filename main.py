@@ -181,7 +181,8 @@ def main():
                 if event == "counted":
                     calories.on_rep(now)
                     gpio.beep()
-                    print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted{lift}")
+                    tip = " [tip: palm looked turned out]" if feedback.counters[arm].palm_tip else ""
+                    print(f"+ {arm.capitalize()} rep {feedback.counters[arm].count} counted{lift}{tip}")
                 else:
                     why = ", ".join(feedback.counters[arm].last_reasons) or "bad form"
                     print(f"x {arm.capitalize()} rep NOT counted - {why}{lift}")

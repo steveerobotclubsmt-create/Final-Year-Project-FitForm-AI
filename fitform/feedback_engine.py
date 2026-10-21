@@ -95,7 +95,11 @@ class FeedbackEngine:
         for arm, event in events:
             c = self.counters[arm]
             if event == "counted":
-                self.message, self.message_color = f"{arm.upper()}: Good rep!", GREEN
+                if c.palm_tip:
+                    self.message = f"{arm.upper()}: Counted\nTip: keep your palm facing your body"
+                else:
+                    self.message = f"{arm.upper()}: Good rep!"
+                self.message_color = GREEN
             else:
                 self.message, self.message_color = self._reject_message(arm), RED
             return
@@ -120,6 +124,8 @@ class FeedbackEngine:
             ("wrist_bent", "Keep your wrist straight", RED),
             ("not_extended", "Lower your arm fully", ORANGE),
         ):
+            if check == "palm_away" and not config.PALM_REJECTS:
+                continue      # advice only: shown after the rep as a tip, not live (live readings flicker)
             for arm in seen_arms:
                 if self.counters[arm].last.get(check):
                     self.message, self.message_color = f"{arm.upper()}: {text}", color

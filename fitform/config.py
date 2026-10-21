@@ -61,6 +61,9 @@ PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else i
 PALM_HOLD_SECONDS = 0.5      # hand turned outward/backward continuously this long during the lift = not counted
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
+PALM_REJECTS = False         # False = palm/fist direction only gives a tip ("Keep your palm facing your body"),
+                             # the rep still counts. The labelled runs of 21 Oct showed the same correct right-arm
+                             # curl reading anywhere from 0 to +-1.0, so it is not reliable enough to fail a rep.
 FIST_PALM_TO_BODY = True     # front camera, clenched fist: palm must face the body; turned outward OR palm
                              # forward = wrong (from the front these two look the same for a fist)
 FIST_CALIB_FILE = "~/fist_calib.json"  # from tools/fist_calibrate.py (labelled runs); used when present

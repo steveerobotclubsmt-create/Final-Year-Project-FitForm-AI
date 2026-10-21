@@ -23,6 +23,7 @@ config.TOP_CONFIRM_FRAMES = 1
 config.FAULT_HOLD_SECONDS = 0.0      # faults count at once here; the hold time has its own tests
 config.HAND_MIN_READINGS = 1
 config.REJECT_PAUSE_SECONDS = 0.0   # the pause after a rejected rep has its own test
+config.PALM_REJECTS = True          # the palm rules are tested as rejections; tip-only mode has its own test
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -193,7 +194,8 @@ def test_classify_hand():
     assert classify_hand(hand(4)) == "fist"
     assert classify_hand(hand(3)) == "fist"
     assert classify_hand(hand(0)) == "open"
-    assert classify_hand(hand(2)) == "partial"
+    assert classify_hand(hand(2)) == "fist"           # 2 bent fingers = gripping (bottle)
+    assert classify_hand(hand(1)) == "open"
 
 
 def grip_hand(bend_deg):
@@ -249,6 +251,21 @@ def test_fist_calibration_per_arm():
     assert fist_calib.classify(cal, "right", -0.95) == "outward"     # turned out reads either sign ...
     assert fist_calib.classify(cal, "right", 0.95) == "outward"      # ... for the right arm
     assert fist_calib.classify({}, "right", 0.1) is None             # not calibrated -> fixed rule is used
+
+
+def test_palm_tip_only_mode_still_counts():
+    config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = True, False, 0.3
+    c = BicepCurlCounter("left", alpha=1.0)
+    for t in (0.0, 0.1, 0.2, 0.3):
+        c.update(m(171), t, palm="outward")                         # palm looks turned out ...
+    c.update(m(120), 0.6, palm="side")
+    assert c.update(m(35), 1.0, palm="side") == "counted"           # ... but the rep counts
+    assert c.palm_tip is True
+    c.update(m(170), 2.0, palm="inward")
+    c.update(m(170), 2.1, palm="inward")
+    c.update(m(90), 2.5, palm="side")
+    assert c.update(m(35), 2.9, palm="side") == "counted" and c.palm_tip is False
+    config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = False, True, 0.0
 
 
 def test_bottle_grip_counts_as_clenched():
