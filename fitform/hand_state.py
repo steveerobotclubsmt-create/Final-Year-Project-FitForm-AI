@@ -7,16 +7,41 @@ import math
 FINGERS = ((8, 6), (12, 10), (16, 14), (20, 18))
 
 
+# (MCP, PIP, tip) for index, middle, ring and little finger
+FINGER_JOINTS = ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))
+GRIP_BEND_MIN = 60     # degrees: a finger bent at least this much (3D) is wrapped round something
+
+
+def finger_bend(landmarks, mcp, pip, tip, width=1.0, height=1.0):
+    """How much a finger is bent, in degrees (0 = straight), from MCP->PIP vs PIP->tip in 3D.
+    Joint angles do not depend on which way the hand is turned, so this works from any camera angle."""
+    def v(a, b):
+        return ((landmarks[b].x - landmarks[a].x) * width, (landmarks[b].y - landmarks[a].y) * height,
+                (getattr(landmarks[b], "z", 0.0) - getattr(landmarks[a], "z", 0.0)) * width)
+    u, w = v(mcp, pip), v(pip, tip)
+    nu, nw = math.sqrt(sum(c * c for c in u)), math.sqrt(sum(c * c for c in w))
+    if nu == 0 or nw == 0:
+        return 0.0
+    c = max(-1.0, min(1.0, sum(a * b for a, b in zip(u, w)) / (nu * nw)))
+    return math.degrees(math.acos(c))
+
+
 def classify_hand(landmarks, width=1.0, height=1.0):
-    """Returns 'fist', 'open' or 'partial'.
-    A finger counts as curled when its tip is closer to the wrist than its middle (PIP) joint is."""
+    """Returns 'fist', 'open' or 'partial'. 'fist' also covers a hand gripping a bottle or dumbbell handle.
+    A finger counts as curled when its tip is closer to the wrist than its middle (PIP) joint is (tight fist),
+    or when it is bent at least GRIP_BEND_MIN degrees (fingers wrapped round a bottle: the tips stay
+    further out than the PIP joints, so the first test alone said 'not clenched')."""
     pts = [(p.x * width, p.y * height) for p in landmarks]
     wrist = pts[0]
 
     def dist(a, b):
         return math.hypot(a[0] - b[0], a[1] - b[1])
 
-    curled = sum(1 for tip, pip in FINGERS if dist(pts[tip], wrist) < dist(pts[pip], wrist))
+    curled = 0
+    for (tip, pip), (m, p, t) in zip(FINGERS, FINGER_JOINTS):
+        if dist(pts[tip], wrist) < dist(pts[pip], wrist) or \
+                finger_bend(landmarks, m, p, t, width, height) >= GRIP_BEND_MIN:
+            curled += 1
     if curled >= 3:
         return "fist"
     if curled <= 1:

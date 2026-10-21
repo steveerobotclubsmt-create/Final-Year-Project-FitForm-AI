@@ -167,6 +167,25 @@ def test_classify_hand():
     assert classify_hand(hand(2)) == "partial"
 
 
+def grip_hand(bend_deg):
+    """Fingers pointing down, each bent bend_deg at the PIP joint towards the camera (-z), like a hand
+    round a bottle: the tips stay further from the wrist than the PIP joints in the picture."""
+    pts = [P(0.5, 0.5, 0.0) for _ in range(21)]
+    a = math.radians(bend_deg)
+    for f, (mcp, pip, dip, tip) in enumerate(((5, 6, 7, 8), (9, 10, 11, 12), (13, 14, 15, 16), (17, 18, 19, 20))):
+        x = 0.46 + 0.025 * f
+        pts[mcp] = P(x, 0.60, 0.0)
+        pts[pip] = P(x, 0.66, 0.0)
+        pts[dip] = P(x, 0.66 + 0.03 * math.cos(a), -0.03 * math.sin(a))
+        pts[tip] = P(x, 0.66 + 0.06 * math.cos(a), -0.06 * math.sin(a))
+    return pts
+
+
+def test_bottle_grip_counts_as_clenched():
+    assert classify_hand(grip_hand(90)) == "fist"         # wrapped round a bottle
+    assert classify_hand(grip_hand(15)) == "open"         # relaxed, nearly straight fingers
+
+
 def test_open_hand_rep_rejected():
     config.FIST_CHECK = True
     c = BicepCurlCounter("right", alpha=1.0)
