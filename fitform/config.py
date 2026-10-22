@@ -1,7 +1,9 @@
 """Central settings for FitForm AI. Change values here instead of inside the modules."""
 
 # ---- Camera ----
-CAMERA_INDEX = 0            # 0 = default webcam; try 1 if the wrong camera opens
+CAMERA_INDEX = 0            # used with --camera usb (first webcam); default --camera auto finds the cameras
+PICAM_ROTATE = 180           # Pi (AI) camera picture rotation (180 = mounted upside down); --rotate overrides
+WEBCAM_ROTATE = 0            # USB webcam picture rotation
                             # on the Pi, run with --camera picam to use the Pi Camera Module 2
 CAPTURE_WIDTH = 640          # 640x480 is plenty for pose detection and much faster than 1280x720 on the Pi
 CAPTURE_HEIGHT = 480
@@ -63,9 +65,15 @@ PALM_BAD_MIN_SCORE = 0.55    # 0..1 a WRONG direction must be this clear, else i
 PALM_HOLD_SECONDS = 0.5      # hand turned outward/backward continuously this long during the lift = not counted
 PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when the palm faces the camera
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
+FIST_REJECTS = False         # False = 'hand not clenched' is advice only (reported on the phone page with pictures):
+                             # a hand round a bottle or dumbbell can look open to the camera (21-22 Oct tests)
 PALM_REJECTS = False         # False = palm/fist direction only gives a tip ("Keep your palm facing your body"),
                              # the rep still counts. The labelled runs of 21 Oct showed the same correct right-arm
                              # curl reading anywhere from 0 to +-1.0, so it is not reliable enough to fail a rep.
+OUTWARD_PAUSE = False        # False = no pause / no on-screen warning in the session: the phone page reports
+                             # the turned-out reps (with hand pictures) instead (the reading is not reliable)
+PALM_TIP_ON_SCREEN = False   # tip under a counted rep when the fist looked turned out (off: shown on the phone page)
+OUTWARD_WARN_MIN = 2         # phone page warns when at least this many reps looked turned out in a session
 OUTWARD_STREAK = 3           # this many reps with the fist turned out (front OR side camera) ...
 OUTWARD_WINDOW = 4           # ... within the last this-many reps ...
 OUTWARD_PAUSE_SECONDS = 3.0  # ... pauses counting this long with 'Your fist is facing outward'
@@ -103,6 +111,12 @@ BUZZER_PIN = 22
 BUZZER_BEEP_SECONDS = 0.1
 
 # ---- Session logging / Flask ----
+# ---- Sessions, summary and phone page ----
+END_AWAY_SECONDS = 5.0       # session ends when nobody is seen for this long ...
+END_IDLE_SECONDS = 30.0      # ... or no curl is finished for this long (after at least one curl)
+SAVED_BANNER_SECONDS = 12.0  # 'Session saved - open ... on your phone' stays on screen this long
+DEVICE_LOGIN_MINUTES = 10    # 'Start on this device' from the phone is valid this long if no session starts
+MAX_SNAPSHOTS = 6            # hand pictures kept per session for the turned-out-fist warning
 LOG_DIR = "logs"
 CSV_FILENAME = "sessions.csv"
 FLASK_ENABLED = True

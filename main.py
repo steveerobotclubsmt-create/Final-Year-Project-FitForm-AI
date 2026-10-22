@@ -1,17 +1,16 @@
-"""FitForm AI - entry point (single camera).
+"""FitForm AI - entry point.
 
 Examples:
-  python main.py                      # default webcam (index 0)
-  python main.py --camera 1           # a different camera
-  python main.py --camera picam       # Raspberry Pi Camera Module (via rpicam-vid)
+  python main.py                      # finds the cameras: Pi camera in front, USB webcam at the side
+  python main.py --no-side            # one camera only
+  python main.py --camera picam --rotate 180 --side-camera 0   # choose the cameras yourself
+  python main.py --camera 1           # a particular webcam as the only camera
   python main.py --video test.mp4     # run on a recorded video instead of a camera
-  python main.py --weight 65          # set body weight for the calorie estimate
-  python main.py --debug --angles 2d  # print live angles; compare 2D and 3D elbow angles
-  python main.py --camera picam --rotate 180   # camera mounted upside down
-  python main.py --camera picam --rotate 180 --side-camera 0   # + webcam at your right side for the palm
+  python main.py --debug              # print live angles and hand readings
 """
 
 import argparse
+import os
 import time
 
 import cv2
@@ -19,19 +18,23 @@ import cv2
 from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
-from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud
+from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_saved
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
-from fitform.session_logger import SessionLogger, start_server
+from fitform.plan import make_plan
+from fitform.session import SessionTracker
+from fitform.session_logger import SessionLogger, local_ip, start_server
 from fitform.session_summary import build_summary, print_summary
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="FitForm AI - bicep curl trainer")
-    p.add_argument("--camera", default=str(config.CAMERA_INDEX),
-                   help="camera index (0, 1, ...) or 'picam' for the Pi Camera Module (default 0)")
+    p.add_argument("--camera", default="auto",
+                   help="'auto' (default: Pi camera in front if present, a USB webcam as side or front), "
+                        "'picam', or a webcam index (0, 1, ...)")
+    p.add_argument("--no-side", action="store_true", help="use one camera only, even if two are found")
     p.add_argument("--video", help="video file to use instead of a camera")
     p.add_argument("--weight", type=float, default=config.USER_WEIGHT_KG, help="body weight in kg")
     p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
@@ -42,14 +45,15 @@ def parse_args():
     p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
     p.add_argument("--debug-screen", action="store_true", help="also show the tuning numbers on the video window")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
-    p.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=0,
-                   help="rotate the camera picture (e.g. 180 for a camera mounted upside down)")
+    p.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=None,
+                   help="rotate the front camera picture (default: PICAM_ROTATE for the Pi camera, "
+                        "WEBCAM_ROTATE for a webcam, see config.py)")
     p.add_argument("--no-demo", action="store_true", help="skip the start-up demo animation")
     p.add_argument("--side-camera", help="second camera at your side (e.g. 0 for the USB webcam) that judges the palm")
     p.add_argument("--side-arm", choices=["right", "left"], default="right",
                    help="which arm the side camera is next to (default right)")
-    p.add_argument("--side-rotate", type=int, choices=[0, 90, 180, 270], default=0,
-                   help="rotate the side camera picture")
+    p.add_argument("--side-rotate", type=int, choices=[0, 90, 180, 270], default=None,
+                   help="rotate the side camera picture (default: WEBCAM_ROTATE)")
     return p.parse_args()
 
 
@@ -57,18 +61,37 @@ def main():
     args = parse_args()
     W, H = config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT
 
+    auto_side = None
     if args.video:
         source = args.video
+    elif args.camera.lower() == "auto":
+        from fitform.camera_detect import detect
+        source, auto_side = detect()
+        if source is None:
+            print("ERROR: no camera found. Connect the Raspberry Pi AI Camera or a USB webcam "
+                  "(check with: rpicam-hello --list-cameras  and  ls /dev/video*)")
+            return
+        if args.no_side:
+            auto_side = None
     elif args.camera.lower() == "picam":
         source = "picam"
+    elif args.camera.lower() == "usb":
+        source = config.CAMERA_INDEX
     else:
         source = int(args.camera)
+    if args.side_camera is None and auto_side is not None:
+        args.side_camera = str(auto_side)
+    if args.rotate is None:                     # each camera type keeps its own mounting rotation
+        args.rotate = config.PICAM_ROTATE if source == "picam" else (0 if args.video else config.WEBCAM_ROTATE)
+    if args.side_rotate is None:
+        args.side_rotate = config.PICAM_ROTATE if args.side_camera == "picam" else config.WEBCAM_ROTATE
     stream = CameraStream(source, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT)
     if not stream.is_opened():
         print(f"ERROR: could not open {source!r}. Try another camera with --camera 1 "
               "(or --camera picam for the Pi Camera Module; check it with: rpicam-hello --list-cameras)")
         return
     stream.start()
+    print(f"Front camera: {source!r} (rotate {args.rotate})")
 
     engine = PoseEngine()
     feedback = FeedbackEngine()
@@ -110,14 +133,58 @@ def main():
     cam_h = int(stream.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     print(f"Camera {cam_w}x{cam_h}, processing {W}x{H}, pose model {config.MODEL_COMPLEXITY}, "
           f"hands every {config.HAND_EVERY_N} frame(s){' in parallel' if pool else ''}")
-    print("Starting... Press Q to quit, R to reset")
+    print("Starting... a session ends when you walk away (or stop curling for a while)")
     last_id = -1
     rotate_code = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
                    270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(args.rotate)
     last_dbg = 0.0
     fps, fps_t, fps_n = 0.0, time.time(), 0
     start_t = time.time()
-    demo_on = not args.no_demo and not args.headless and config.DEMO_SECONDS > 0
+    demo_allowed = not args.no_demo and not args.headless and config.DEMO_SECONDS > 0
+    demo_on = demo_allowed
+    demo_pending = False
+    tracker = SessionTracker()
+    snaps, session_tag = [], None
+    saved_until, saved_summary, saved_plan = 0.0, None, None
+    url = f"http://{local_ip()}:{config.FLASK_PORT}" if (config.FLASK_ENABLED and not args.no_server) else logger.dir
+    print(f"Phone page: {url}")
+
+    session_user = None
+    qr = None
+    try:
+        qr = cv2.QRCodeEncoder.create().encode(url) if url.startswith("http") else None
+    except (AttributeError, cv2.error):
+        qr = None
+
+    def end_session(end_time):
+        """Session over: summary + goal for next time, saved to the user's account; device logs out."""
+        summary = build_summary(feedback, calories, end_time, snapshots=snaps, user=session_user)
+        plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
+        print_summary(summary, plan)
+        logger.save(summary, plan)
+        logger.clear_device_user()
+        feedback.reset()
+        calories.reset()
+        tracker.end()
+        return summary, plan
+
+    def save_snapshot(arm, frame, pts, kind):
+        """Picture of the hand (front camera, plus the side camera) for the turned-out-fist warning."""
+        if len(snaps) >= config.MAX_SNAPSHOTS or pts is None:
+            return
+        x, y = int(pts["wrist"][0]), int(pts["wrist"][1])
+        r = 120
+        crop = frame[max(0, y - r):y + r, max(0, x - r):x + r]
+        if crop.size == 0:
+            return
+        crop = cv2.resize(cv2.flip(crop, 1), (240, 240))     # mirrored, like the screen
+        if side is not None and arm == args.side_arm and side.frame is not None:
+            sf = side.frame
+            crop = cv2.hconcat([crop, cv2.resize(sf, (int(240 * sf.shape[1] / sf.shape[0]), 240))])
+        os.makedirs(logger.snap_dir, exist_ok=True)
+        name = f"{session_tag}_{arm}_{kind}_{len(snaps) + 1}.jpg"
+        cv2.imwrite(os.path.join(logger.snap_dir, name), crop)
+        snaps.append(name)
 
     try:
         while not stream.finished:
@@ -198,6 +265,28 @@ def main():
                 if feedback.counters[arm].outward_alert and event != "counted":
                     print(f"! {arm.capitalize()}: fist turned outward in {config.OUTWARD_STREAK} of the last {config.OUTWARD_WINDOW} reps - paused")
             gpio.show_form(feedback.overall_form_ok())
+            if events and session_tag is None:              # first curl of a new session
+                session_tag = time.strftime("%Y%m%d_%H%M%S")
+                session_user = logger.device_user()          # who tapped 'Train on this device' (or guest)
+                calories.weight_kg = logger.user_weight(session_user) if session_user else config.USER_WEIGHT_KG
+                print(f"Session started for {session_user or 'guest'} ({calories.weight_kg:.0f} kg)")
+            if tracker.active:
+                logger.keep_device_user()
+            for arm, event in events:
+                c_ = feedback.counters[arm]
+                if c_.palm_flag_last:
+                    save_snapshot(arm, frame, drawn.get(arm), "palm")
+                if c_.grip_flag_last:
+                    save_snapshot(arm, frame, drawn.get(arm), "grip")
+            # session over (walked away / stopped curling): summary + plan go to the phone page
+            if tracker.update(now, landmarks is not None, bool(events)):
+                saved_summary, saved_plan = end_session(tracker.last_activity or now)
+                snaps, session_tag, session_user = [], None, None
+                saved_until = now + config.SAVED_BANNER_SECONDS
+                demo_pending = demo_allowed
+                gpio.beep()
+            if demo_pending and now >= saved_until and landmarks is not None:
+                demo_on, demo_pending, start_t = True, False, now     # next person: show the demo again
 
             fps_n += 1
             if now - fps_t >= 1.0:
@@ -213,12 +302,22 @@ def main():
                     side.draw_preview(image)
                 if args.debug_screen:
                     draw_debug(image, feedback)
-                if demo_on:
+                who = session_user or logger.device_user()
+                if who and not (now < saved_until):
+                    cv2.putText(image, f"User: {who}", (image.shape[1] - 230, image.shape[0] - 70),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
+                if now < saved_until and saved_summary is not None:
+                    draw_saved(image, saved_summary, url, (saved_plan or {}).get("goal"))
+                elif not tracker.active and not demo_on and landmarks is None:     # nobody in front
+                    draw_idle(image, url, qr, logger.device_user())
+                if demo_on and now >= saved_until:
                     el = now - start_t
                     if el >= config.DEMO_SECONDS:
                         demo_on = False
                         feedback.reset()          # anything done during the demo is not counted
                         calories.reset()
+                        tracker.end()
+                        snaps, session_tag = [], None
                         print("Demo finished - go!")
                     else:
                         draw_demo(image, el, config.DEMO_SECONDS - el + 0.5)
@@ -234,11 +333,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        now = time.time()
-        summary = build_summary(feedback, calories, now)
-        print_summary(summary)
-        if summary["attempted_total"] > 0:
-            logger.save(summary)
+        if tracker.active:                         # program closed mid-session: still save it
+            end_session(tracker.last_activity or time.time())
         if pool:
             pool.shutdown(wait=False)
         stream.stop()

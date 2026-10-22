@@ -5,17 +5,19 @@ Individual Major Project (6FTC2062), BEng Robotics and Artificial Intelligence, 
 FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count bicep curl repetitions and check exercise form in real time. It gives feedback through an on-screen overlay, green/red LEDs and a buzzer, and logs each session to a CSV file that can be downloaded over Wi-Fi.
 
 ## Features
-- Real-time pose detection (MediaPipe Pose + OpenCV)
-- Strict rep counting per arm: a rep only counts if it starts from full extension, the upper arm stays where it started, the wrist stays straight, the hand is a clenched fist, the palm faces the front or the body at the bottom (standard curl; judged by one vote over the down position and the lower part of the lift, unclear readings ignored) and the lift is not too fast. Hand checks are strict: if the hand cannot be seen, the rep does not count
-- 2D joint angles (tested on the Pi: 2D tracks the real arm; the 3D world landmarks compressed the range). Switch with `--angles 3d`
-- Fist and palm-direction checks with MediaPipe Hands (open hand, reverse grip or hand turned outward = rep not counted)
-- Start position: hold the arm straight before the first rep, so stepping into view does not count a rep
-- Live feedback: "Hold your arm straight to start", "Keep your elbow still", "Clench your fist", "Don't turn your hand outward", "Lower your arm fully", "Good rep!" / "Not counted - <reason>"
-- Single-camera version (a two-camera front + side version is in development)
-- Green/red LED form indicator and buzzer beep on every counted rep (Raspberry Pi GPIO)
-- Calorie estimate (MET x weight x active time; timer starts on the first rep)
-- Session log (CSV) with reps, form accuracy, duration, calories and average rep speed
-- Flask web server to view or download the session log from another device
+- Real-time pose detection (MediaPipe Pose + OpenCV), 2D joint angles
+- Rep counting per arm. A rep only counts if it starts from a straight arm, the upper arm points down and stays by the side, the hand grips the weight (fist, or fingers round a bottle / dumbbell), the wrist stays straight and the lift is neither too fast nor too slow
+- Two cameras: Raspberry Pi AI Camera in front (counting) + USB webcam at the side (`--side-camera 0`); either camera can confirm the grip
+- When a curl is not counted, the screen shows why and what to do (e.g. "Keep your upper arm pointing down"), with a short pause before the next rep
+- Start-up demo: an animated stick figure showing a correct curl and the key rules (fist facing the body)
+- No keyboard needed: a session ends when you walk away (5 s) or stop curling (30 s)
+- Accounts on the phone app (username + password, body weight). The device screen shows a QR code: scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Without logging in, sessions are saved as "guest"
+- Phone app dashboard: next session goal (sets x reps per arm, kcal, minutes), sessions this week, calories per session against each session's goal, last session, why curls were not counted, history, CSV download
+- Goals from published guidelines (see "Where the goals come from")
+- Fist direction and grip (hand not clenched) are advisory (see Known limitations): the rep still counts, and the app shows a warning with pictures from the cameras when it happened in 2 or more reps
+- Green/red LED form indicator and buzzer (Raspberry Pi GPIO)
+- Calorie estimate: MET x body weight x active time (from the first to the last curl)
+- Session log: CSV (`logs/sessions.csv`) plus a detailed history (`logs/sessions.jsonl`)
 
 ## Project structure
 ```
@@ -75,27 +77,58 @@ rpicam-hello --list-cameras     # Pi Camera Module detected?
 ```
 
 ## Usage
-Run from the project folder:
+Run from the project folder (on the Pi, first `source ~/fitform_env/bin/activate`):
 ```bash
-python main.py                    # default webcam
-python main.py --camera 1         # use a different camera
-python main.py --camera picam     # Raspberry Pi Camera Module 2 (on the Pi)
+python main.py                    # finds the cameras by itself (see below)
+python main.py --no-side          # use one camera even if two are connected
+python main.py --camera picam --rotate 180 --side-camera 0   # choose the cameras yourself
 python main.py --weight 65        # your body weight in kg for calories
 python main.py --video clip.mp4   # test on a recorded video
-python main.py --no-gpio --no-server
+python main.py --no-demo --no-gpio --no-server --debug
 ```
-Keys: **Q** = quit and save the session, **R** = reset counters.
+Cameras are found automatically: the Raspberry Pi AI Camera is the front camera when it is connected and a
+USB webcam becomes the side camera; without the AI Camera, the USB webcam is the front camera. At least one
+camera is needed. The AI Camera picture is turned 180 degrees (it is mounted upside down) - change
+`PICAM_ROTATE` / `WEBCAM_ROTATE` in `fitform/config.py` if your mounting differs.
 
-Extra options: `--no-fist` turns off the clenched-fist check. Thresholds (elbow drift, wrist angle, fist rules) are in `fitform/config.py`.
+With nobody in front of it, the device shows a QR code with its address (e.g. `http://192.168.1.23:5000`).
+Scan it with a phone on the same Wi-Fi, log in or create an account, and tap **Train on this device**.
+A session ends by itself when you walk out of view for 5 s or stop curling for 30 s; the screen then shows
+the totals and your next goal, and everything is on the phone app.
+(With a keyboard: **Q** quits and saves, **R** resets.)
 
-### Camera set-up for reliable counting
-- Stand (or sit) **2-3 m** from the camera so your **whole upper body, elbows and both hands** stay in view, including when your arm is straight down.
-- Camera at about chest height. Front-on works; about 45 degrees to the side is best for seeing the elbow.
+Optional: `tools/fist_calibrate.py` builds a per-arm calibration of the fist-direction reading from labelled
+`--debug` runs (instructions at the top of the file). Thresholds are in `fitform/config.py`.
+
+### Camera set-up
+- Stand about **2-3 m** from the front camera so your whole upper body, elbows and both hands stay in view.
+- Side webcam: level with your hip, as close to 90 degrees from the front as the cable allows.
 - Good, even lighting; avoid a bright window behind you.
 
-Session log from another device on the same Wi-Fi:
-- `http://<pi-ip>:5000/sessions` - JSON
-- `http://<pi-ip>:5000/sessions.csv` - download CSV
+Other addresses: `http://<pi-ip>:5000/sessions` (JSON), `http://<pi-ip>:5000/sessions.csv` (download).
+
+## Where the goals come from
+- Sets and reps: novices 1-3 sets of 8-12 reps; add 2-10 % load once 1-2 extra reps are possible on two
+  consecutive sessions; 1-2 min rest for assistance exercises - Ratamess et al., ACSM position stand,
+  *Med Sci Sports Exerc* 2009;41(3):687-708. The app uses a ladder 3x8 -> 3x10 -> 3x12 reps per arm (a step up
+  when the goal is reached with at least 85 % of curls counted), then a weight increase and back to 3x8.
+- At least 2 sessions a week: WHO Guidelines on Physical Activity and Sedentary Behaviour (2020).
+- Calories: MET 3.5, "resistance training, multiple exercises, 8-15 reps" (2024 Adult Compendium of Physical
+  Activities, code 02054); kcal = MET x body weight x hours. The kcal goal is the estimate for doing the
+  session's goal at about 3 s per rep with 60 s rests.
+
+## Known limitations
+- **Fist direction (turned outward vs. facing the body)** cannot be detected reliably. Tested with one camera,
+  two cameras and a per-arm calibration from labelled runs (21 Oct 2026): the reading separates the two cases
+  within one session, but the same correct curl can read anywhere from "correct" to "turned out" between reps
+  and sessions (it depends on small wrist rotations and on camera placement). It is therefore advisory only.
+- **Clenched fist vs. open hand** is judged from the hand landmarks, which flicker frame to frame, and a hand
+  round a bottle or dumbbell can look open. It is therefore advisory as well.
+- Accounts are stored on each device; several devices sharing one account list would need a central server.
+- **Correct curls are counted reliably; wrong ones less so** - the arm checks (upper arm, elbow, tempo,
+  extension) catch bad reps well, the hand checks less consistently.
+- Calories are an estimate (MET formula), not a measurement. The plan is general guidance, not coaching.
+- Frame rate on the Pi 5 is about 13-16 FPS with two cameras, so very fast reps can be timed less accurately.
 
 ## Wiring (default BCM pins, change in `fitform/config.py`)
 | Component | GPIO pin | Notes |
@@ -114,4 +147,8 @@ mediapipe 0.10.21, opencv-python 4.11.0.86, numpy 1.26, Python 3.10-3.12.
 MediaPipe 1.0+ removed the `mp.solutions.pose` API this project uses, so keep the version pinned.
 
 ## Privacy
-Video frames are processed in memory and never saved or transmitted. Only exercise performance numbers are logged.
+Video is processed in memory and not recorded. Exercise numbers are logged on the Pi; passwords are stored
+hashed (PBKDF2) in `logs/users.json`. When a rep looked like it was
+done with the fist turned out, a small picture of the hand is saved in `logs/snaps/` (at most 6 per session) so you
+can check it on the phone page; it is only reachable on the local Wi-Fi. Set `MAX_SNAPSHOTS = 0` in
+`fitform/config.py` to turn this off, and delete `logs/` to remove all data.

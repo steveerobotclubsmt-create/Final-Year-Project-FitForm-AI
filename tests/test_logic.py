@@ -25,6 +25,7 @@ config.HAND_MIN_READINGS = 1
 config.REJECT_PAUSE_SECONDS = 0.0   # the pause after a rejected rep has its own test
 config.PALM_REJECTS = True          # the palm rules are tested as rejections; tip-only mode has its own test
 config.OUTWARD_STREAK = 99          # the 'fist facing outward' streak pause has its own test
+config.FIST_REJECTS = True          # grip rejections are tested; advisory mode has its own test
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -272,7 +273,7 @@ def test_palm_tip_only_mode_still_counts():
 def test_three_outward_reps_in_a_row_pause():
     """Tip-only mode: reps still count, but the 3rd turned-out rep in a row pauses with a warning."""
     config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = True, False, 0.3
-    config.OUTWARD_STREAK, config.OUTWARD_PAUSE_SECONDS = 3, 3.0
+    config.OUTWARD_STREAK, config.OUTWARD_PAUSE_SECONDS, config.OUTWARD_PAUSE = 3, 3.0, True
     c = BicepCurlCounter("left", alpha=1.0)
     t = 0.0
     for rep in range(3):
@@ -290,13 +291,13 @@ def test_three_outward_reps_in_a_row_pause():
     c.update(m(120), t, palm="side"); t += 0.3
     assert c.update(m(35), t, palm="side") == "counted" and not c.outward_alert and c.palm_streak == 0
     config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = False, True, 0.0
-    config.OUTWARD_STREAK = 99
+    config.OUTWARD_STREAK, config.OUTWARD_PAUSE = 99, False
 
 
 def test_outward_warning_survives_one_missed_rep():
     """Turned out, turned out, (cameras read it as fine), turned out -> still 3 of the last 4."""
     config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = True, False, 0.3
-    config.OUTWARD_STREAK, config.OUTWARD_WINDOW = 3, 4
+    config.OUTWARD_STREAK, config.OUTWARD_WINDOW, config.OUTWARD_PAUSE = 3, 4, True
     c = BicepCurlCounter("left", alpha=1.0)
     t = 0.0
     for i, p in enumerate(("outward", "outward", "inward", "outward")):
@@ -306,7 +307,7 @@ def test_outward_warning_survives_one_missed_rep():
         c.update(m(35), t, palm="side"); t += 0.5
         assert c.outward_alert is (i == 3)
     config.PALM_CHECK, config.PALM_REJECTS, config.FAULT_HOLD_SECONDS = False, True, 0.0
-    config.OUTWARD_STREAK = 99
+    config.OUTWARD_STREAK, config.OUTWARD_PAUSE = 99, False
 
 
 def test_demo_draws():
@@ -657,15 +658,130 @@ def test_calories():
     assert abs(t.calories(3600) - 245.0) < 1e-6
 
 
-def test_logger_and_flask():
+def test_session_ends_when_walking_away_or_idle():
+    from fitform.session import SessionTracker
+    t = SessionTracker(away_s=5, idle_s=30)
+    assert t.update(0.0, True, False) is False          # no curl yet: no session
+    assert t.update(1.0, True, True) is False           # first curl starts it
+    assert t.update(5.0, False, False) is False         # out of view 4 s
+    assert t.update(6.5, False, False) is True          # out of view > 5 s -> end
+    t.end()
+    t.update(10.0, True, True)
+    assert t.update(39.0, True, False) is False
+    assert t.update(40.5, True, False) is True          # standing there, no curl for > 30 s -> end
+
+
+def test_summary_and_goal():
+    from fitform.feedback_engine import FeedbackEngine
+    from fitform.plan import goal_for, make_plan
+    from fitform.session_summary import build_summary
+    f = FeedbackEngine()
+    r, l = f.counters["right"], f.counters["left"]
+    r.count, r.attempted, r.rep_times, r.reject_counts, r.palm_flags, r.grip_flags = 24, 25, [1.0] * 24, {"fast": 1}, 2, 3
+    l.count, l.attempted, l.rep_times = 24, 26, [1.2] * 24
+    l.reject_counts = {"arm_tilt": 2}
+    cal = CalorieTracker(weight_kg=80)
+    cal.on_rep(0.0)
+    s = build_summary(f, cal, 120.0, snapshots=["a_right_palm_1.jpg"], user="steve")
+    assert s["reps_total"] == 48 and s["attempted_total"] == 51 and s["weight_kg"] == 80 and s["user"] == "steve"
+    assert s["not_counted"] == {"upper arm not pointing down": 2, "too fast": 1}
+    g0 = goal_for(0, 80)
+    assert (g0["sets"], g0["reps"], g0["total_reps"]) == (3, 8, 48)
+    # kcal goal = MET 3.5 x 80 kg x planned time (48 reps x 3 s + 5 rests x 60 s = 444 s)
+    assert abs(g0["kcal"] - round(3.5 * 80 * 444 / 3600, 1)) < 0.05
+    p = make_plan(s, [], 80)                              # 24 per arm >= 3x8 with 94 % counted -> step up
+    assert p["met_goal"] and p["goal"]["reps"] == 10
+    assert p["palm_warning"] and p["grip_warning"]
+    low = make_plan({**s, "form_accuracy_pct": 50.0}, [], 80)
+    assert not low["met_goal"] and low["goal"]["reps"] == 8
+    # at 3x12: the first time 'repeat once more', the second time in a row 'add weight' and back to 3x8
+    at12 = {**s, "reps_right": 36, "reps_left": 36, "reps_total": 72}
+    rec12 = {"summary": at12, "plan": {"goal": goal_for(2, 80)}}
+    first = make_plan(at12, [rec12], 80)
+    assert first["goal"]["reps"] == 12 and "Repeat" in first["headline"]
+    second = make_plan(at12, [rec12, {"summary": at12, "plan": first}], 80)
+    assert second["goal"]["reps"] == 8 and "2-10 %" in second["weight"]
+
+
+def test_grip_is_advisory_by_default():
+    config.FIST_CHECK, config.FIST_REJECTS = True, False
+    c = BicepCurlCounter("right", alpha=1.0)
+    for t in (0.0, 0.1, 0.2):
+        c.update(m(170), t, "open")
+    c.update(m(90), 0.5, "open")
+    assert c.update(m(30), 1.0, "open") == "counted" and c.grip_flags == 1 and c.grip_flag_last
+    config.FIST_CHECK, config.FIST_REJECTS = False, True
+
+
+def test_device_login_times_out():
     with tempfile.TemporaryDirectory() as d:
         log = SessionLogger(log_dir=d)
-        log.save({"exercise": "bicep_curl", "reps_total": 5})
-        log.save({"exercise": "bicep_curl", "reps_total": 7})
-        client = create_app(log).test_client()
-        rows = client.get("/sessions").get_json()
-        assert [r["reps_total"] for r in rows] == ["5", "7"]
-        assert client.get("/sessions.csv").status_code == 200
+        log.set_device_user("steve")
+        assert log.device_user() == "steve"
+        log._device_until = 0
+        assert log.device_user() is None
+
+
+def test_camera_detection_and_roles():
+    from fitform.camera_detect import choose, parse_rpicam_list, parse_v4l2_devices
+    # outputs pasted from the Pi on 21 Oct
+    rp = """Available cameras
+-----------------
+0 : imx500 [4056x3040 10-bit RGGB] (/base/axi/pcie@1000120000/rp1/i2c@80000/imx500@1a)
+    Modes: 'SRGGB10_CSI2P' : 2028x1520 [30.02 fps - (0, 0)/4056x3040 crop]"""
+    assert parse_rpicam_list(rp) and not parse_rpicam_list("No cameras available!")
+    v4l = """pispbe (platform:1000880000.pisp_be):
+        /dev/video20
+        /dev/video21
+
+rpi-hevc-dec (platform:rpi-hevc-dec):
+        /dev/video19
+
+C270 HD WEBCAM (usb-xhci-hcd.0-2):
+        /dev/video0
+        /dev/video1
+"""
+    assert parse_v4l2_devices(v4l) == [0]
+    assert choose(True, [0]) == ("picam", 0)       # both: AI camera front, webcam side
+    assert choose(True, []) == ("picam", None)     # AI camera only
+    assert choose(False, [0]) == (0, None)         # no AI camera: webcam is the front
+    assert choose(False, [0, 2]) == (0, 2)         # two webcams: second one at the side
+    assert choose(False, []) == (None, None)       # nothing found
+
+
+def test_logger_accounts_and_app():
+    with tempfile.TemporaryDirectory() as d:
+        log = SessionLogger(log_dir=d)
+        assert log.register("st", "secret1", 70)                  # username too short -> error text
+        assert log.register("steve", "123", 70)                   # password too short
+        assert log.register("steve", "secret1", 82) is None
+        assert log.register("Steve", "other12", 70)               # taken (case-insensitive)
+        assert log.check_login("steve", "secret1") and not log.check_login("steve", "wrong")
+        assert "secret1" not in open(log.users_path).read()       # stored hashed
+        client = create_app(log, secret_key="test").test_client()
+        assert "Log in" in client.get("/").get_data(as_text=True)
+        assert client.post("/login", data={"username": "steve", "password": "wrong"}).status_code == 302
+        assert "Log in" in client.get("/").get_data(as_text=True)
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        page = client.get("/").get_data(as_text=True)
+        assert "Hi steve" in page and "Next session goal" in page and "3 sets &times; 8 reps" in page
+        client.post("/start")
+        assert log.device_user() == "steve"
+        assert "ready for you" in client.get("/").get_data(as_text=True)
+        from fitform.plan import goal_for
+        s = {"timestamp": "2026-10-22 10:00:00", "user": "steve", "exercise": "bicep_curl", "reps_right": 3,
+             "reps_left": 2, "reps_total": 5, "attempted_total": 6, "form_accuracy_pct": 83.3, "duration_s": 61.0,
+             "calories_kcal": 1.2, "avg_rep_speed_s": 0.8, "not_counted": {"too fast": 1}, "snapshots": []}
+        log.save(s, {"headline": "Same goal", "goal": goal_for(1, 82), "this_goal": goal_for(0, 82),
+                     "weight": "Keep the same weight.", "focus": [], "notes": [], "rest": "Rest.", "met_goal": False})
+        log.save({**s, "user": "anna"}, None)                     # someone else's session
+        page = client.get("/").get_data(as_text=True)
+        assert "Calories per session" in page and "3 sets &times; 10 reps" in page
+        assert len(client.get("/sessions").get_json()) == 1       # only my sessions
+        assert "steve" in client.get("/sessions.csv").get_data(as_text=True)
+        assert client.get("/snap/someone_else.jpg").status_code == 404
+        client.get("/logout")
+        assert "Log in" in client.get("/").get_data(as_text=True)
 
 
 if __name__ == "__main__":
