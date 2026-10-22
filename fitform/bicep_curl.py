@@ -140,6 +140,12 @@ class BicepCurlCounter:
         self.palm_tip = False      # palm looked turned out during the last rep (advice only, see PALM_REJECTS)
         self.palm_streak = 0       # recent completed reps where a camera saw the fist turned out
         self._palm_hist = []       # turned out yes/no for the last OUTWARD_WINDOW reps
+        self.reject_counts = {}    # reason key -> how many curls were not counted for it (session summary)
+        self.palm_flags = 0        # curls where a camera saw the fist turned out (session summary)
+        self.palm_flag_last = False   # the curl that just finished was one of them (for the hand picture)
+        self.grip_flags = 0        # curls where the hand looked open (advisory, see FIST_REJECTS)
+        self.grip_flag_last = False
+        self.lift_times_all = []   # lift time of every finished curl, counted or not
         self.outward_alert = False # True while the 'fist facing outward' pause is on
         self.reject_key = None     # main reason of the last rejected rep (for the 'what to do' hint)
         self._side_log = []        # (time, side-camera palm label) - only when a side camera is used
@@ -190,6 +196,11 @@ class BicepCurlCounter:
             self._lift_palm = [sum(1 for p in seen if p in PALM_GOOD), sum(1 for p in seen if p in PALM_BAD)]
         self.last_hand_summary = ", ".join(notes)
         return reasons
+
+    @staticmethod
+    def _advisory():
+        """Reasons that are reported but do not stop a rep from counting."""
+        return ({"palm_dir"} if not config.PALM_REJECTS else set()) | ({"fist"} if not config.FIST_REJECTS else set())
 
     def _hold(self, key, on, now):
         """True once fault `key` has been on continuously for longer than its hold time."""
@@ -299,7 +310,7 @@ class BicepCurlCounter:
                             ("palm_dir", palm_away), ("hand_hidden", hand_hidden)):
                 if self._hold(key, on, now):
                     self._reasons.add(key)
-            if self._reasons - ({"palm_dir"} if not config.PALM_REJECTS else set()):
+            if self._reasons - self._advisory():
                 self.form_ok = False
 
         # forearm pointing at the camera (mid-lift, facing it): the 2D picture squashes it and the 2D elbow
@@ -322,6 +333,7 @@ class BicepCurlCounter:
                 self.last_hand_summary = ""
                 self.last_reasons = [REASON_TEXT["not_lowered"]]
                 self.reject_key = "not_lowered"
+                self.reject_counts["not_lowered"] = self.reject_counts.get("not_lowered", 0) + 1
                 self.blocked_until = now + config.REJECT_PAUSE_SECONDS
                 event = "rejected"
         if self.stage == "down" and self._top_frames >= config.TOP_CONFIRM_FRAMES:
@@ -353,14 +365,24 @@ class BicepCurlCounter:
             if up_time is not None and up_time > config.MAX_UP_SECONDS:
                 self._reasons.add("slow")
             # several reps in a row with the fist turned out (either camera): pause and tell the user
+            self.palm_flag_last = "palm_dir" in self._reasons
+            if self.palm_flag_last:
+                self.palm_flags += 1
+            if up_time is not None:
+                self.lift_times_all.append(up_time)
             # (3 of the last 4 reps, so one rep the cameras happened to read as fine does not reset it)
             self._palm_hist = (self._palm_hist + ["palm_dir" in self._reasons])[-config.OUTWARD_WINDOW:]
             self.palm_streak = sum(self._palm_hist)
-            if config.PALM_CHECK and self.palm_streak >= config.OUTWARD_STREAK:
+            if config.PALM_CHECK and config.OUTWARD_PAUSE and self.palm_streak >= config.OUTWARD_STREAK:
                 self._palm_hist = []
                 self.palm_streak = 0
                 self.outward_alert = True
                 self.blocked_until = max(self.blocked_until, now + config.OUTWARD_PAUSE_SECONDS)
+            self.grip_flag_last = "fist" in self._reasons
+            if self.grip_flag_last:
+                self.grip_flags += 1
+            if not config.FIST_REJECTS:
+                self._reasons.discard("fist")      # grip is advice only: a bottle / dumbbell can look like an open hand
             if not config.PALM_REJECTS and "palm_dir" in self._reasons:
                 # palm direction is advice only (21 Oct: the front camera's fist-direction reading is not
                 # consistent enough to fail a rep) - the rep can still count, with a tip on screen
@@ -375,6 +397,8 @@ class BicepCurlCounter:
             else:
                 self.last_reasons = [REASON_TEXT[r] for r in REASON_ORDER if r in self._reasons]
                 self.reject_key = next((r for r in REASON_ORDER if r in self._reasons), None)
+                for r in self._reasons:
+                    self.reject_counts[r] = self.reject_counts.get(r, 0) + 1
                 self.blocked_until = now + config.REJECT_PAUSE_SECONDS
                 event = "rejected"
 

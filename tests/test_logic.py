@@ -668,6 +668,7 @@ def test_session_ends_when_walking_away_or_idle():
     t.end()
     t.update(10.0, True, True)
     assert t.update(39.0, True, False) is False
+    assert t.seconds_left(30.0) == 10.0                 # countdown for the screen
     assert t.update(40.5, True, False) is True          # standing there, no curl for > 30 s -> end
 
 

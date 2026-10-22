@@ -100,7 +100,7 @@ class FeedbackEngine:
                 self.message = f"{arm.upper()}: Your fist is facing outward\nTurn your palm to face your body"
                 self.message_color = ORANGE
             elif event == "counted":
-                if c.palm_tip:
+                if c.palm_tip and config.PALM_TIP_ON_SCREEN:
                     self.message = f"{arm.upper()}: Counted\nTip: keep your palm facing your body"
                 else:
                     self.message = f"{arm.upper()}: Good rep!"

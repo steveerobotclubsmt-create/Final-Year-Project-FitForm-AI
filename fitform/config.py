@@ -112,6 +112,7 @@ BUZZER_BEEP_SECONDS = 0.1
 
 # ---- Session logging / Flask ----
 # ---- Sessions, summary and phone page ----
+PRESENCE_VISIBILITY = 0.5    # both shoulders must be seen at least this clearly to count as 'someone is there'
 END_AWAY_SECONDS = 5.0       # session ends when nobody is seen for this long ...
 END_IDLE_SECONDS = 30.0      # ... or no curl is finished for this long (after at least one curl)
 SAVED_BANNER_SECONDS = 12.0  # 'Session saved - open ... on your phone' stays on screen this long

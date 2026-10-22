@@ -8,8 +8,8 @@ venv/
 fitform_env/
 cnn_env/
 
-# Session data (personal exercise logs)
-logs/*.csv
+# Session data (personal exercise logs and hand pictures)
+logs/
 
 # Editor / OS
 .vscode/

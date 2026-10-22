@@ -129,8 +129,8 @@ def draw_demo(image, t, seconds_left):
     cv2.putText(image, "How to do a bicep curl", (x0, y), FONT, 0.8, orange, 2)
     rules = ["1. Face the camera, arms straight down",
              "2. Keep your upper arm still by your side",
-             "3. Hold the weight in a fist,",
-             "   palm facing your body",
+             "3. Hold the weight in a fist, facing your",
+             "   body (parallel to it) - not turned out",
              "4. Lift and lower steadily",
              "   (about 1 second each way)",
              "5. Straighten your arm fully at the bottom"]
@@ -140,4 +140,69 @@ def draw_demo(image, t, seconds_left):
     for i, r in enumerate(rules):
         cv2.putText(image, r, (x0, y + 45 + i * 34), FONT, fs, white, 2)
     cv2.putText(image, last, (x0, y + 45 + len(rules) * 34 + 30), FONT, fs, green, 2)
+    return image
+
+
+def draw_saved(image, summary, url, goal=None):
+    """After a session: totals, the next goal and where to see everything."""
+    h, w = image.shape[:2]
+    overlay = image.copy()
+    cv2.rectangle(overlay, (0, 0), (w, h), (15, 15, 15), -1)
+    cv2.addWeighted(overlay, 0.85, image, 0.15, 0, image)
+    green, white, orange = (0, 220, 0), (235, 235, 235), (0, 200, 255)
+    who = summary.get("user", "guest")
+    lines = [("Session saved!" if who == "guest" else f"Session saved to {who}'s account!", 1.0, green),
+             (f"Reps: right {summary['reps_right']}  left {summary['reps_left']}", 0.75, white),
+             (f"Calories: {summary['calories_kcal']:.1f} kcal   Time: {int(summary['duration_s'] // 60)}:"
+              f"{int(summary['duration_s'] % 60):02d}", 0.75, white)]
+    if goal:
+        lines.append((f"Next goal: {goal['sets']} x {goal['reps']} reps per arm (~{goal['kcal']} kcal)", 0.7, orange))
+    lines += [("Details on your phone:", 0.65, white), (url, 0.8, orange)]
+    y = int(h * 0.28)
+    for text, fs, col in lines:
+        (tw, th), _ = cv2.getTextSize(text, FONT, fs, 2)
+        fs2 = min(fs, fs * (w - 30) / max(tw, 1))
+        (tw, th), _ = cv2.getTextSize(text, FONT, fs2, 2)
+        cv2.putText(image, text, ((w - tw) // 2, y), FONT, fs2, col, 2)
+        y += int(th * 2.2)
+    return image
+
+
+def draw_idle(image, url="", qr=None, user=None):
+    """No session running: QR code to log in on the phone, or a greeting when someone is logged in."""
+    h, w = image.shape[:2]
+    overlay = image.copy()
+    cv2.rectangle(overlay, (0, 0), (w, h), (15, 15, 15), -1)
+    cv2.addWeighted(overlay, 0.75, image, 0.25, 0, image)
+    orange, white, green = (0, 200, 255), (235, 235, 235), (0, 220, 0)
+    if user:
+        lines = [(f"Hi {user}!", 1.1, green), ("Stand in front of the camera and start curling", 0.7, white)]
+        y = int(h * 0.45)
+    else:
+        lines = [("FitForm AI", 1.1, orange), ("Scan to log in on your phone", 0.7, white), (url, 0.6, white),
+                 ("(or just start curling as a guest)", 0.55, (160, 160, 160))]
+        y = int(h * 0.12)
+        if qr is not None:
+            size = int(min(h, w) * 0.42)
+            big = cv2.resize(qr, (size, size), interpolation=cv2.INTER_NEAREST)
+            big = cv2.copyMakeBorder(big, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=255)
+            big = cv2.cvtColor(big, cv2.COLOR_GRAY2BGR)
+            x0, y0 = (w - big.shape[1]) // 2, int(h * 0.42)
+            image[y0:y0 + big.shape[0], x0:x0 + big.shape[1]] = big
+    for text, fs, col in lines:
+        (tw, th), _ = cv2.getTextSize(text, FONT, fs, 2)
+        cv2.putText(image, text, ((w - tw) // 2, y), FONT, fs, col, 2)
+        y += int(th * 2.2)
+    return image
+
+
+def draw_qr_corner(image, qr, url):
+    """Small QR code in the corner while someone stands there without being logged in."""
+    h, w = image.shape[:2]
+    size = 120
+    big = cv2.resize(qr, (size, size), interpolation=cv2.INTER_NEAREST)
+    big = cv2.cvtColor(cv2.copyMakeBorder(big, 6, 6, 6, 6, cv2.BORDER_CONSTANT, value=255), cv2.COLOR_GRAY2BGR)
+    x0, y0 = 10, h - 60 - big.shape[0] - 30
+    image[y0:y0 + big.shape[0], x0:x0 + big.shape[1]] = big
+    cv2.putText(image, "Scan to log in", (x0, y0 - 8), FONT, 0.5, (0, 200, 255), 2)
     return image

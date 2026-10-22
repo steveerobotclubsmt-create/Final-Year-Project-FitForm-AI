@@ -18,7 +18,7 @@ import cv2
 from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
-from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_saved
+from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, draw_saved
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
@@ -279,13 +279,19 @@ def main():
                 if c_.grip_flag_last:
                     save_snapshot(arm, frame, drawn.get(arm), "grip")
             # session over (walked away / stopped curling): summary + plan go to the phone page
-            if tracker.update(now, landmarks is not None, bool(events)):
+            # someone is really there: both shoulders clearly seen (the tracker can keep a faint 'ghost'
+            # skeleton for a while after the person has left, which kept the session from ending)
+            present = landmarks is not None and sum(
+                landmarks.landmark[i].visibility for i in (11, 12)) / 2 >= config.PRESENCE_VISIBILITY
+            if tracker.update(now, present, bool(events) and present):
+                why = "nobody seen" if not present else "no curl"
+                print(f"[SESSION] ended ({why}) - saving")
                 saved_summary, saved_plan = end_session(tracker.last_activity or now)
                 snaps, session_tag, session_user = [], None, None
                 saved_until = now + config.SAVED_BANNER_SECONDS
                 demo_pending = demo_allowed
                 gpio.beep()
-            if demo_pending and now >= saved_until and landmarks is not None:
+            if demo_pending and now >= saved_until and present:
                 demo_on, demo_pending, start_t = True, False, now     # next person: show the demo again
 
             fps_n += 1
@@ -308,8 +314,15 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
                 if now < saved_until and saved_summary is not None:
                     draw_saved(image, saved_summary, url, (saved_plan or {}).get("goal"))
-                elif not tracker.active and not demo_on and landmarks is None:     # nobody in front
+                elif not tracker.active and not demo_on and not present:           # nobody in front
                     draw_idle(image, url, qr, logger.device_user())
+                elif not tracker.active and not demo_on and qr is not None and not logger.device_user():
+                    draw_qr_corner(image, qr, url)                                  # not logged in yet
+                if tracker.active and not (now < saved_until):
+                    left = tracker.seconds_left(now)
+                    if left is not None and left <= 10:
+                        cv2.putText(image, f"Saving session in {left:.0f} s", (image.shape[1] // 2 - 120, 60),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
                 if demo_on and now >= saved_until:
                     el = now - start_t
                     if el >= config.DEMO_SECONDS:
