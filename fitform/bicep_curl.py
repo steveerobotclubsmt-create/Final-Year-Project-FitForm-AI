@@ -86,6 +86,7 @@ REASON_TEXT = {
     "fast": "too fast",
     "slow": "too slow",
     "drop": "lowered too fast",
+    "no_weight": "no weight in the hand",
     "not_lowered": "arm not straightened at the bottom",
     "arm_tilt": "upper arm not pointing down",
     "arm_forward": "elbow moved forward/back",
@@ -102,9 +103,11 @@ FIX_TEXT = {
     "fast": "Lift a little slower",
     "slow": "Lift a little faster",
     "drop": "Lower the weight slowly",
+    "no_weight": "Hold a dumbbell or a bottle",
     "not_lowered": "Straighten your arm fully at the bottom",
 }
-REASON_ORDER = ("arm_tilt", "arm_forward", "elbow", "hand_hidden", "fist", "palm_dir", "wrist", "fast", "slow")
+REASON_ORDER = ("arm_tilt", "arm_forward", "elbow", "hand_hidden", "no_weight", "fist", "palm_dir", "wrist",
+                "fast", "slow")
 
 
 class BicepCurlCounter:
@@ -149,6 +152,9 @@ class BicepCurlCounter:
         self.palm_flag_last = False   # the curl that just finished was one of them (for the hand picture)
         self.grip_flags = 0        # curls where the hand looked open (advisory, see FIST_REJECTS)
         self.grip_flag_last = False
+        self.weight_flags = 0      # curls where the hand looked empty - no weight (advisory, see HOLD_REJECTS)
+        self.weight_flag_last = False
+        self._hold_log = []        # (time, 'holding' | 'empty') from the hand classifier
         self.lift_times_all = []   # lift time of every finished curl, counted or not
         self.outward_alert = False # True while the 'fist facing outward' pause is on
         self.reject_key = None     # main reason of the last rejected rep (for the 'what to do' hint)
@@ -211,7 +217,8 @@ class BicepCurlCounter:
     def _advisory():
         """Reasons that are reported but do not stop a rep from counting."""
         return (({"palm_dir"} if not config.PALM_REJECTS else set()) | ({"fist"} if not config.FIST_REJECTS else set())
-                | ({"hand_hidden"} if not config.HAND_HIDDEN_REJECTS else set()))
+                | ({"hand_hidden"} if not config.HAND_HIDDEN_REJECTS else set())
+                | ({"no_weight"} if not config.HOLD_REJECTS else set()))
 
     def _hold(self, key, on, now):
         """True once fault `key` has been on continuously for longer than its hold time."""
@@ -222,9 +229,10 @@ class BicepCurlCounter:
         hold = config.PALM_HOLD_SECONDS if key == "palm_dir" else config.FAULT_HOLD_SECONDS
         return now - since >= hold
 
-    def update(self, m, now, hand=None, palm=None, side_palm=None):
-        """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None) and the
-        palm direction ('front', 'inward', 'outward', 'back', 'side' or None). Returns 'counted', 'rejected' or None."""
+    def update(self, m, now, hand=None, palm=None, side_palm=None, held=None):
+        """Feed one frame of measurements, the hand state ('fist', 'open', 'partial' or None), the
+        palm direction ('front', 'inward', 'outward', 'back', 'side' or None) and the hand classifier's
+        'holding' / 'empty' (None = no reading this frame). Returns 'counted', 'rejected' or None."""
         if m.get("elbow") is None:
             return None
         # Arm out of view for a while (person walked away): ask for the start position again.
@@ -251,6 +259,10 @@ class BicepCurlCounter:
         keep = config.MAX_UP_SECONDS + config.HAND_WINDOW_BEFORE + 2.0
         while self._hand_log and now - self._hand_log[0][0] > keep:
             self._hand_log.pop(0)
+        if held is not None:
+            self._hold_log.append((now, held))
+        while self._hold_log and now - self._hold_log[0][0] > keep:
+            self._hold_log.pop(0)
 
         if straight:
             if self._straight_since is None:
@@ -432,6 +444,21 @@ class BicepCurlCounter:
             self.grip_flag_last = "fist" in self._reasons
             if self.grip_flag_last:
                 self.grip_flags += 1
+            # weight in the hand: one vote over the start position and the lift (hand classifier readings)
+            self.weight_flag_last = False
+            if config.HOLD_CHECK and self._rep_start is not None:
+                since = self._rep_start - config.HAND_WINDOW_BEFORE
+                seen = [s for t, s in self._hold_log if t >= since]
+                empty = sum(1 for s in seen if s == "empty")
+                if seen:
+                    note = f"weight {len(seen) - empty}/{len(seen)}"
+                    self.last_hand_summary = f"{self.last_hand_summary}, {note}" if self.last_hand_summary else note
+                if len(seen) >= config.HOLD_MIN_READINGS and empty >= config.HOLD_EMPTY_RATIO * len(seen):
+                    self._reasons.add("no_weight")
+                    self.weight_flag_last = True
+                    self.weight_flags += 1
+            if not config.HOLD_REJECTS:
+                self._reasons.discard("no_weight")
             if not config.FIST_REJECTS:
                 self._reasons.discard("fist")      # grip is advice only: a bottle / dumbbell can look like an open hand
             if not config.HAND_HIDDEN_REJECTS:

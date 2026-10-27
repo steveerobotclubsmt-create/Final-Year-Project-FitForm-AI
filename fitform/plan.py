@@ -60,7 +60,7 @@ def make_plan(s, history=None, weight_kg=None):
     acc = s.get("form_accuracy_pct", 0.0)
     r, l = s.get("reps_right", 0), s.get("reps_left", 0)
     plan = {"focus": [], "notes": [], "progress": None, "palm_warning": None, "grip_warning": None,
-            "this_goal": current, "met_goal": _met(s, current), "weight": "Keep the same weight."}
+            "weight_warning": None, "this_goal": current, "met_goal": _met(s, current), "weight": "Keep the same weight."}
 
     if plan["met_goal"]:
         if step < len(LADDER) - 1:
@@ -110,6 +110,11 @@ def make_plan(s, history=None, weight_kg=None):
     if grips >= config.OUTWARD_WARN_MIN:
         plan["grip_warning"] = (f"Your hand looked open in {grips} reps. With a bottle or dumbbell this can be a camera "
                                 "error - check the pictures. Hold the weight firmly in your fist.")
+    weights = s.get("weight_flags_right", 0) + s.get("weight_flags_left", 0)
+    if config.HOLD_CHECK and weights >= config.OUTWARD_WARN_MIN:
+        plan["weight_warning"] = (f"No weight was seen in your hand in {weights} reps. Curls without a weight do not "
+                                  "train the biceps much - hold a dumbbell or a water bottle. The camera can be "
+                                  "wrong (it has mostly learned from a water bottle so far), so check the pictures.")
     plan["rest"] = "Rest your biceps about 48 hours; aim for at least 2 sessions a week."
     return plan
 

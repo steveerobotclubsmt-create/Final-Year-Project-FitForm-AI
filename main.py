@@ -18,7 +18,8 @@ import cv2
 from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
-from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, draw_saved
+from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, draw_saved, \
+    fit_to_screen
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
@@ -40,8 +41,10 @@ def parse_args():
     p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
     p.add_argument("--no-server", action="store_true", help="disable the Flask web server")
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
+    p.add_argument("--windowed", action="store_true", help="normal window instead of full screen")
     p.add_argument("--no-fist", action="store_true", help="do not require a clenched fist")
     p.add_argument("--no-palm", action="store_true", help="turn off the palm-direction check")
+    p.add_argument("--no-hold", action="store_true", help="turn off the 'weight in the hand' check (CNN)")
     p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
     p.add_argument("--debug-screen", action="store_true", help="also show the tuning numbers on the video window")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
@@ -105,6 +108,15 @@ def main():
           f"curled below {config.UP_ANGLE} | palm check {'on' if config.PALM_CHECK else 'off'} | "
           f"fist check {'on' if config.FIST_CHECK else 'off'} | lift {config.MIN_UP_SECONDS}-{config.MAX_UP_SECONDS} s")
     hands = HandChecker() if (config.FIST_CHECK or config.PALM_CHECK) else None
+    holder = None
+    if config.HOLD_CHECK and not args.no_hold:
+        try:
+            from fitform.hold_check import HoldClassifier
+            holder = HoldClassifier()
+            print(f"Weight check: {config.HOLD_MODEL} every {config.HOLD_EVERY_N} frames "
+                  f"({'rejects' if config.HOLD_REJECTS else 'advice only'})")
+        except Exception as e:                  # model file missing / unreadable: run without it
+            print(f"Weight check off: could not load {config.HOLD_MODEL} ({e})")
     calories = CalorieTracker(weight_kg=args.weight)
     gpio = GPIOFeedback(enabled=not args.no_gpio and config.GPIO_ENABLED)
     logger = SessionLogger()
@@ -189,6 +201,14 @@ def main():
         cv2.imwrite(os.path.join(logger.snap_dir, name), crop)
         snaps.append(name)
 
+    window = "FitForm AI - Bicep Curl"
+    # full screen on the device (no keyboard to maximise it); switched on after the first picture is shown -
+    # before that, the Qt window goes full screen but leaves the picture at 800x600 in the middle (27 Oct)
+    fullscreen_pending = config.FULLSCREEN and not args.windowed and not args.headless
+    screen, fs_frames = None, 0                 # full-screen size, measured a few frames after switching
+    if not args.headless:
+        cv2.namedWindow(window, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)   # picture scales, keeps its shape
+
     try:
         while not stream.finished:
             frame_id, frame = stream.read()
@@ -213,6 +233,7 @@ def main():
                 landmarks = engine.process(frame)
                 hand_states = hands.process(frame, landmarks) if hands else None
             palms = dict(hands.palms) if hands else None
+            holds = holder.process(frame, landmarks) if holder else None
             if side:
                 if side_job:
                     side_job.result()
@@ -234,7 +255,8 @@ def main():
             events, drawn = feedback.update(landmarks, W, H, now, world=engine.world, hands=hand_states,
                                             hand_points=hands.points if hands else None,
                                             palms=palms,
-                                            side_palms={args.side_arm: side.label} if side else None)
+                                            side_palms={args.side_arm: side.label} if side else None,
+                                            holds=holds)
             logged_in = curls_allowed(login_required, session_tag is not None, logger.device_user())
             if events and not logged_in:            # nobody logged in yet: curls are not counted or saved
                 feedback.reset()
@@ -253,6 +275,7 @@ def main():
                           f"len {'-' if lr is None else f'{lr:.2f}'} wrist {fmt(d['wrist_angle'])} "
                           f"hand {d['hand'] or '-'}{'' if not hands or hands.curls.get(arm) is None else f' ({hands.curls[arm]}/4 fingers)'} palm {d.get('palm') or '-'}"
                           f"{'' if ps is None else f' (front {ps[0]:+.2f} inward {ps[1]:+.2f})'}"
+                          f"{'' if not holder or holder.probs.get(arm) is None else f' weight {holder.probs[arm]:.2f}'}"
                           f"{f' side {side.label or chr(45)} ({side.score:+.2f})' if (side and arm == args.side_arm and side.score is not None) else ''}"
                           f"{' FORESHORTENED' if d.get('foreshortened') else ''} stage {c.stage or '-'} ready {c.ready}")
             for arm, event in events:
@@ -287,6 +310,8 @@ def main():
                     save_snapshot(arm, frame, drawn.get(arm), "palm")
                 if c_.grip_flag_last:
                     save_snapshot(arm, frame, drawn.get(arm), "grip")
+                if c_.weight_flag_last:
+                    save_snapshot(arm, frame, drawn.get(arm), "weight")
             # session over (walked away / stopped curling): summary + plan go to the phone page
             # someone is really there: both shoulders clearly seen (the tracker can keep a faint 'ghost'
             # skeleton for a while after the person has left, which kept the session from ending)
@@ -328,8 +353,8 @@ def main():
                 elif not tracker.active and not demo_on and qr is not None and not logger.device_user():
                     draw_qr_corner(image, qr, url, login_required)                  # not logged in yet
                 if tracker.active and not (now < saved_until):
-                    left = tracker.seconds_left(now)
-                    if left is not None and left <= 10:
+                    left = tracker.countdown(now)       # only when nobody is seen or no curl for a while
+                    if left is not None:
                         cv2.putText(image, f"Saving session in {left:.0f} s", (image.shape[1] // 2 - 120, 60),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
                 if demo_on and now >= saved_until:
@@ -343,7 +368,20 @@ def main():
                         print("Demo finished - go!")
                     else:
                         draw_demo(image, el, config.DEMO_SECONDS - el + 0.5)
-                cv2.imshow("FitForm AI - Bicep Curl", image)
+                cv2.imshow(window, fit_to_screen(image, screen) if screen else image)
+                if fullscreen_pending:
+                    cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                    fullscreen_pending, fs_frames = False, 1
+                elif fs_frames and screen is None:
+                    # the window is full screen but shows the picture at its own size in the middle:
+                    # screen size = picture + the margins on both sides
+                    fs_frames += 1
+                    x, y, iw, ih = cv2.getWindowImageRect(window)
+                    if fs_frames >= 4 and x > 0 and y >= 0:
+                        screen = (2 * x + iw, 2 * y + ih)
+                        print(f"Full screen {screen[0]}x{screen[1]}")
+                    elif fs_frames > 60:
+                        fs_frames = 0                  # window manager did not make it full screen: leave it
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):

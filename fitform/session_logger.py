@@ -348,6 +348,8 @@ def create_app(logger, secret_key=None):
             warnings.append(("palm", "Check your fist position", plan["palm_warning"]))
         if plan and plan.get("grip_warning"):
             warnings.append(("grip", "Check your grip", plan["grip_warning"]))
+        if plan and plan.get("weight_warning"):
+            warnings.append(("weight", "No weight in your hand?", plan["weight_warning"]))
         return render_template_string(DASH, style=STYLE, user=user, weight=weight, hist=hist[-12:], last=last,
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
                                       warnings=warnings, sources=SOURCES, device_user=logger.device_user())

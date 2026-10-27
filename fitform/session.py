@@ -39,6 +39,19 @@ class SessionTracker:
         idle = self.idle_s - (now - self.last_activity)
         return max(0.0, min(away, idle))
 
+    def countdown(self, now):
+        """Seconds to show as 'Saving session in ...', or None while nothing is about to end it: someone is
+        there and curled recently. Shown when nobody has been seen for AWAY_GRACE_SECONDS (counts down
+        the walk-away time) or in the last IDLE_WARN_SECONDS of the no-curl time."""
+        if not self.active:
+            return None
+        if self.last_seen is None or now - self.last_seen > config.AWAY_GRACE_SECONDS:
+            return self.seconds_left(now)
+        idle_left = self.idle_s - (now - self.last_activity)
+        if idle_left <= config.IDLE_WARN_SECONDS:
+            return max(0.0, idle_left)
+        return None
+
     def end(self):
         self.active = False
         self.last_activity = None

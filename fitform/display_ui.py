@@ -4,6 +4,7 @@ calories, elapsed time and the feedback bar."""
 import math
 
 import cv2
+import numpy as np
 
 from . import config
 
@@ -195,6 +196,19 @@ def draw_idle(image, url="", qr=None, user=None, login_required=False):
         cv2.putText(image, text, ((w - tw) // 2, y), FONT, fs, col, 2)
         y += int(th * 2.2)
     return image
+
+
+def fit_to_screen(image, screen):
+    """Enlarges the picture to fill a full-screen window, keeping its shape (black bars at the sides or top).
+    OpenCV's Qt window shows a full-screen picture at its own size in the middle, so this is done here."""
+    sw, sh = screen
+    h, w = image.shape[:2]
+    s = min(sw / w, sh / h)
+    big = cv2.resize(image, (int(w * s), int(h * s)), interpolation=cv2.INTER_LINEAR)
+    canvas = np.zeros((sh, sw, 3), np.uint8)
+    ox, oy = (sw - big.shape[1]) // 2, (sh - big.shape[0]) // 2
+    canvas[oy:oy + big.shape[0], ox:ox + big.shape[1]] = big
+    return canvas
 
 
 def draw_qr_corner(image, qr, url, login_required=False):

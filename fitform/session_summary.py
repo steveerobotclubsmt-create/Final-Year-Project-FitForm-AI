@@ -39,6 +39,8 @@ def build_summary(feedback, calories, end_time, exercise="bicep_curl", snapshots
         "palm_flags_left": left.palm_flags,
         "grip_flags_right": right.grip_flags,
         "grip_flags_left": left.grip_flags,
+        "weight_flags_right": right.weight_flags,
+        "weight_flags_left": left.weight_flags,
         "snapshots": list(snapshots or []),
         "user": user or "guest",
         "weight_kg": calories.weight_kg,

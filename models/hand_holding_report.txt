@@ -1,0 +1,20 @@
+Hand classifier 'holding a weight / empty hand' - MobileNetV3-Small (ImageNet), fine-tuned, 128x128 crops
+Data (27 Oct 2026, one person, one plastic bottle held flat; no dumbbell yet):
+  round 1: front + side camera (webcam at the side, ~30 deg)       4902 crops (3773 empty, 1129 holding)
+  round 2: front camera only (webcam was not at the side)           4654 crops (3524 empty, 1130 holding)
+
+1) Trained on the first 75 % of every round-1 clip, tested on the last 25 % (same session):
+   99.7 % (1438 pictures); front 99.8 %, side 99.2 %; empty never called 'holding', 5 bottles missed
+
+2) Trained on round 1, tested on round 2 (new session: other position / light) - the honest figure:
+   front camera 98.5 % (4654 pictures); bottle 95.5 %, empty fist 99.5 %, empty open 97.3 %
+   Errors: motion-blurred open hands, a yellow pole in the background read as the (yellow) bottle,
+   some wrong labels (hands close together). Side camera of round 2 not valid (webcam not at the side).
+
+3) Final model (models/hand_holding.onnx): trained on every picture of rounds 1 + 2, 8 epochs, 99.9 % train.
+   In FitForm: front camera every 3rd frame, one vote per rep (>= 3 readings, >= 60 % 'empty' = no weight);
+   advice only (HOLD_REJECTS = False). Replay of round-2 clips: bottle reps 5/5-6/6 'holding',
+   empty open-hand reps 0/6-1/6.
+
+Limits: one person, one bottle, one room; no dumbbell. Next: round 3 with a 3D-printed dumbbell and a
+different-coloured object as a new test set, ideally other people too.

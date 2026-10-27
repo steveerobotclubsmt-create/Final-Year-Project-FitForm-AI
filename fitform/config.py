@@ -8,6 +8,8 @@ WEBCAM_ROTATE = 0            # USB webcam picture rotation
 CAPTURE_WIDTH = 640          # 640x480 is plenty for pose detection and much faster than 1280x720 on the Pi
 CAPTURE_HEIGHT = 480
 CAPTURE_FPS = 30
+CAMERA_STALL_SECONDS = 3.0   # Pi camera sends no picture this long = stalled: rpicam-vid is restarted
+CAMERA_MAX_RESTARTS = 20     # ... at most this often per run (then the app stops: camera really broken)
 CAPTURE_MJPG = True          # ask a USB camera for MJPG (USB 2.0 cameras are often limited to ~5-10 fps raw)
 DISPLAY_WIDTH = 800          # processing + display size; keep the same 4:3 shape as the camera so angles are true
 DISPLAY_HEIGHT = 600
@@ -77,6 +79,14 @@ PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when 
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
 FIST_REJECTS = False         # False = 'hand not clenched' is advice only (reported on the phone page with pictures):
                              # a hand round a bottle or dumbbell can look open to the camera (21-22 Oct tests)
+HOLD_CHECK = True            # 'is there a weight in the hand?' - CNN on the front camera's hand picture
+HOLD_MODEL = "models/hand_holding.onnx"   # from tools/train_hand_classifier.py (MobileNetV3-Small, ~5 ms per hand)
+HOLD_EVERY_N = 3             # classify the hands every N frames
+HOLD_MIN_READINGS = 3        # a rep needs this many hand readings (start position + lift) to be judged ...
+HOLD_EMPTY_RATIO = 0.6       # ... and this share of them 'empty' = 'no weight' for that rep (one vote per rep,
+                             # so single blurred frames do not decide it; per picture 98.5 % on a new session)
+HOLD_REJECTS = False         # False = advice only (phone page, with pictures): trained on one bottle and one
+                             # person so far - not reliable enough to fail a rep (no dumbbell in the data yet)
 HAND_HIDDEN_REJECTS = False  # False = 'hand not visible' does not stop a rep: the hand check only serves the grip
                              # and fist direction, which are advice only. Live test 27 Oct: an empty relaxed hand
                              # 2-3 m away was often not found by MediaPipe Hands (8 of 20 proper curls rejected)
@@ -109,6 +119,7 @@ HAND_MIN_CONFIDENCE = 0.4
 HAND_MATCH_DIST = 0.18       # hand must be within this fraction of the frame width of the pose wrist
 
 # ---- Screen ----
+FULLSCREEN = True            # window fills the whole screen at start (no keyboard needed); --windowed turns it off
 MESSAGE_HOLD_SECONDS = 1.0   # a feedback message stays at least this long (stops the text flickering)
 
 
@@ -128,6 +139,9 @@ BUZZER_BEEP_SECONDS = 0.1
 PRESENCE_VISIBILITY = 0.5    # both shoulders must be seen at least this clearly to count as 'someone is there'
 END_AWAY_SECONDS = 5.0       # session ends when nobody is seen for this long ...
 END_IDLE_SECONDS = 30.0      # ... or no curl is finished for this long (after at least one curl)
+AWAY_GRACE_SECONDS = 1.0     # 'Saving session in ...' only once nobody has been seen this long (not while you
+                             # are there - before 27 Oct it showed during the whole session) ...
+IDLE_WARN_SECONDS = 10.0     # ... or in the last this-many seconds of END_IDLE_SECONDS without a curl
 SAVED_BANNER_SECONDS = 12.0  # 'Session saved - open ... on your phone' stays on screen this long
 DEVICE_LOGIN_MINUTES = 10    # 'Start on this device' from the phone is valid this long if no session starts
 REQUIRE_LOGIN = True         # curls only count after someone taps 'Train on this device' (no guest sessions);

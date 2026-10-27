@@ -687,6 +687,27 @@ def test_session_ends_when_walking_away_or_idle():
     assert t.update(40.5, True, False) is True          # standing there, no curl for > 30 s -> end
 
 
+def test_saving_countdown_only_when_the_session_is_about_to_end():
+    """'Saving session in ...' must not stay on screen while the person is there and curling (27 Oct)."""
+    from fitform.session import SessionTracker
+    t = SessionTracker(away_s=5, idle_s=30)
+    assert t.countdown(0.0) is None                     # no session
+    t.update(1.0, True, True)
+    t.update(3.0, True, False)
+    assert t.countdown(3.0) is None                     # there and curled 2 s ago: no text
+    t.update(3.5, False, False)
+    assert t.countdown(3.8) is None                     # out of view < 1 s (one missed frame): no text
+    assert t.countdown(5.0) == 3.0                      # out of view 2 s: 'Saving session in 3 s'
+    t.update(5.5, True, False)
+    assert t.countdown(5.5) is None                     # back in view: the text goes away
+    t.update(20.5, True, False)
+    assert t.countdown(20.5) is None                    # 19.5 s without a curl: still quiet ...
+    t.update(22.0, True, False)
+    assert t.countdown(22.0) == 9.0                     # ... last 10 s of the no-curl time: counts down
+    t.update(23.0, True, True)
+    assert t.countdown(23.0) is None                    # a curl: the text goes away
+
+
 def test_summary_and_goal():
     from fitform.feedback_engine import FeedbackEngine
     from fitform.plan import goal_for, make_plan
@@ -818,6 +839,62 @@ def test_lowering_check_without_wrist_height_uses_the_elbow():
     assert c.update(m(30), 1.0) is None
     assert c.update(m(170), 1.2) == "rejected" and c.reject_key == "drop"
     config.MIN_DOWN_SECONDS = 0.0
+
+
+def test_no_weight_vote_is_advice_by_default():
+    """Mostly 'empty' readings from the hand classifier: the rep still counts but is flagged (phone page)."""
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, held="empty")
+    c.update(m(120), 0.3, held="holding")         # one stray reading does not change the vote
+    c.update(m(90), 0.6, held="empty")
+    assert c.update(m(30), 1.0, held="empty") == "counted"
+    assert c.weight_flag_last and c.weight_flags == 1 and "weight 1/4" in c.last_hand_summary
+
+
+def test_weight_in_hand_is_not_flagged():
+    c = BicepCurlCounter("right", alpha=1.0)
+    for t, e, h in ((0.0, 170, "holding"), (0.3, 120, "empty"), (0.6, 90, "holding")):
+        c.update(m(e), t, held=h)
+    assert c.update(m(30), 1.0, held="holding") == "counted" and not c.weight_flag_last and c.weight_flags == 0
+
+
+def test_too_few_weight_readings_are_not_judged():
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, held="empty")           # 2 readings < HOLD_MIN_READINGS
+    assert c.update(m(30), 1.0, held="empty") == "counted" and not c.weight_flag_last
+
+
+def test_no_weight_can_reject_when_switched_on():
+    config.HOLD_REJECTS = True
+    c = BicepCurlCounter("right", alpha=1.0)
+    for t, e in ((0.0, 170), (0.3, 120), (0.6, 90)):
+        c.update(m(e), t, held="empty")
+    assert c.update(m(30), 1.0, held="empty") == "rejected" and c.last_reasons == ["no weight in the hand"]
+    config.HOLD_REJECTS = False
+
+
+def test_hand_crop_for_the_weight_check():
+    import numpy as np
+    from fitform.hold_check import hand_crop
+    frame = np.zeros((600, 800, 3), np.uint8)
+    lm = [P(0.5, 0.5, visibility=0.0) for _ in range(33)]
+    lm[11], lm[12] = P(0.6, 0.3), P(0.4, 0.3)                      # shoulders
+    lm[14], lm[16] = P(0.4, 0.45), P(0.4, 0.6)                     # right elbow, wrist hanging down
+    lm[13], lm[15] = P(0.6, 0.45), P(0.6, 0.6)                     # left arm, far away
+    assert hand_crop(frame, lm, "right").shape == (128, 128, 3)
+    lm[15] = P(0.42, 0.62)                                         # other hand right next to it
+    assert hand_crop(frame, lm, "right") is None
+    lm[15] = P(0.6, 0.6)
+    lm[16] = P(0.4, 0.99)                                          # hand at the bottom edge of the picture
+    assert hand_crop(frame, lm, "right") is None
+
+
+def test_weight_warning_on_the_phone_page():
+    from fitform.plan import make_plan
+    s = {"reps_total": 10, "attempted_total": 10, "reps_right": 5, "reps_left": 5, "form_accuracy_pct": 100.0,
+         "weight_flags_right": 3, "weight_flags_left": 2}
+    assert "5 reps" in make_plan(s)["weight_warning"]
+    assert make_plan(dict(s, weight_flags_right=0, weight_flags_left=1))["weight_warning"] is None
 
 
 def test_curls_need_a_login_first():

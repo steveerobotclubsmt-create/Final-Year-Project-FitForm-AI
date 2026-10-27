@@ -2,6 +2,7 @@
 The Pi screen shows what to do and counts down, so nobody has to touch the keyboard.
   python tools/record_clips.py                        # the standard set: slow, fast swing, fast drop
   python tools/record_clips.py slow:40 swing:30       # choose clips and seconds yourself
+  python tools/record_clips.py hands 1                # hand classifier: bottle right/left, fist, open (round 1)
 Files go to logs/clips/ (not uploaded to GitHub):  <label>_front.mp4, <label>_side.mp4, <label>_times.csv
 The front clip is saved as the camera sees it (not rotated): replay with
   python main.py --video logs/clips/slow_front.mp4 --rotate 180 --side-camera logs/clips/slow_side.mp4"""
@@ -22,9 +23,15 @@ INSTRUCTIONS = {
     "slow": "SLOW, PROPER curls: about 2 s up, 2-3 s down. Both arms one after the other.",
     "swing": "FAST SWINGS: throw the arm up quickly (the wrong way). Both arms.",
     "drop": "Normal lift, then DROP the arm down fast (the wrong way). Both arms.",
+    # hand classifier ('holding a weight' / 'empty'): curl normally; a number after the label is the round (bottle2)
+    "bottle": "BOTTLE held FLAT like a dumbbell, in the RIGHT hand. Normal curls; turn it a little now and then.",
+    "bottleL": "BOTTLE held FLAT like a dumbbell, in the LEFT hand. Normal curls; turn it a little now and then.",
+    "fist": "EMPTY hands, CLENCHED fists. Normal curls, both arms.",
+    "open": "EMPTY hands, OPEN or relaxed. Normal curls, both arms.",
 }
 DEFAULT = [("slow", 45), ("swing", 30), ("drop", 30)]
-GET_READY_S = 8
+HANDS = [("bottle", 40), ("bottleL", 40), ("fist", 40), ("open", 40)]   # python tools/record_clips.py hands [round]
+GET_READY_S = 12
 FIRST_READY_S = 20          # more time before the first clip (walk from the Pi to your place)
 FPS = 30
 
@@ -44,7 +51,11 @@ def show(window, frame, lines, rotate):
 
 
 def main():
-    clips = [(a.split(":")[0], int(a.split(":")[1]) if ":" in a else 30) for a in sys.argv[1:]] or DEFAULT
+    if sys.argv[1:2] == ["hands"]:                   # the hand-classifier set, e.g. 'hands 2' -> bottle2, fist2, ...
+        rnd = sys.argv[2] if len(sys.argv) > 2 else "1"
+        clips = [(f"{label}{rnd}", s) for label, s in HANDS]
+    else:
+        clips = [(a.split(":")[0], int(a.split(":")[1]) if ":" in a else 30) for a in sys.argv[1:]] or DEFAULT
     out_dir = os.path.join(ROOT, config.LOG_DIR, "clips")
     os.makedirs(out_dir, exist_ok=True)
     front_src, side_src = detect()
@@ -58,7 +69,7 @@ def main():
     orange, white, red, green = (0, 200, 255), (235, 235, 235), (0, 0, 255), (0, 220, 0)
     try:
         for n, (label, seconds) in enumerate(clips, 1):
-            what = INSTRUCTIONS.get(label, label)
+            what = INSTRUCTIONS.get(label.rstrip("0123456789"), label)
             t0 = time.time()
             ready_s = FIRST_READY_S if n == 1 else GET_READY_S
             while time.time() - t0 < ready_s:                # get ready (not recorded)

@@ -46,11 +46,15 @@ class _RpicamCapture:
         return self.proc is not None and self.proc.poll() is None
 
     def read(self):
-        if not self.isOpened():
+        proc = self.proc                    # (release() from the watchdog thread may clear self.proc meanwhile)
+        if proc is None or proc.poll() is not None:
             return False, None
         buf = bytearray()
         while len(buf) < self.frame_bytes:
-            chunk = self.proc.stdout.read(self.frame_bytes - len(buf))
+            try:
+                chunk = proc.stdout.read(self.frame_bytes - len(buf))
+            except (ValueError, OSError):   # pipe closed by release()
+                return False, None
             if not chunk:
                 return False, None
             buf.extend(chunk)
@@ -78,6 +82,9 @@ class CameraStream:
         self.source = source
         self.is_picam = source == "picam"
         self.is_file = isinstance(source, str) and not self.is_picam
+        self._size = (width, height)
+        self._last_frame_t = time.time()
+        self.restarts = 0
         if self.is_picam:
             self.cap = _RpicamCapture(width, height)
         else:
@@ -107,7 +114,20 @@ class CameraStream:
         self._running = True
         self._thread = threading.Thread(target=self._update, daemon=True)
         self._thread.start()
+        if self.is_picam:
+            threading.Thread(target=self._watchdog, daemon=True).start()
         return self
+
+    def _watchdog(self):
+        """The Pi camera sometimes stops sending pictures while rpicam-vid keeps running (27 Oct: the app froze
+        mid-session, Pi at 77 C and throttled). No picture for CAMERA_STALL_SECONDS: stop rpicam-vid, which
+        ends the pipe read in _update, and _update starts a new one."""
+        while self._running:
+            time.sleep(0.5)
+            if self._running and time.time() - self._last_frame_t > config.CAMERA_STALL_SECONDS:
+                print(f"[CAMERA] no picture for {config.CAMERA_STALL_SECONDS:.0f} s - restarting the Pi camera")
+                self._last_frame_t = time.time()       # give the new process time to start
+                self.cap.release()
 
     def _update(self):
         # Video files are paced at their own frame rate; live cameras run as fast as they deliver.
@@ -118,11 +138,19 @@ class CameraStream:
         while self._running:
             ok, frame = self.cap.read()
             if not ok:
+                if self.is_picam and self._running and self.restarts < config.CAMERA_MAX_RESTARTS:
+                    self.cap.release()                 # stalled (watchdog) or crashed: start rpicam-vid again
+                    self.restarts += 1
+                    time.sleep(0.5)
+                    self.cap = _RpicamCapture(*self._size)
+                    self._last_frame_t = time.time()
+                    continue
                 if self.is_file or (self.is_picam and not self.cap.isOpened()):
                     self.finished = True
                     break
                 time.sleep(0.01)
                 continue
+            self._last_frame_t = time.time()
             with self._lock:
                 self._frame = frame
                 self._frame_id += 1
