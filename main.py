@@ -187,7 +187,9 @@ def main():
         """Picture of the hand (front camera, plus the side camera) for the turned-out-fist warning."""
         if len(snaps) >= config.MAX_SNAPSHOTS or pts is None:
             return
-        x, y = int(pts["wrist"][0]), int(pts["wrist"][1])
+        # pts are mirrored screen coordinates but `frame` is the un-mirrored camera picture: mirror x back,
+        # or the picture shows the OTHER hand (27 Oct: 'no weight' cards showed the hand holding the bottle)
+        x, y = frame.shape[1] - int(pts["wrist"][0]), int(pts["wrist"][1])
         r = 120
         crop = frame[max(0, y - r):y + r, max(0, x - r):x + r]
         if crop.size == 0:
