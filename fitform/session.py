@@ -4,6 +4,12 @@
 from . import config
 
 
+def curls_allowed(login_required, session_running, device_user):
+    """Curls only count once someone has logged in on the phone and tapped 'Train on this device'.
+    A session that has started keeps counting even if the login would otherwise time out."""
+    return not login_required or session_running or bool(device_user)
+
+
 class SessionTracker:
     def __init__(self, away_s=None, idle_s=None):
         self.away_s = config.END_AWAY_SECONDS if away_s is None else away_s

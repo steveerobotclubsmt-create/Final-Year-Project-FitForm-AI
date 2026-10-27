@@ -52,6 +52,8 @@ class FeedbackEngine:
                 wx_, wy_ = pts["wrist"]
                 meas["forearm_len"] = ((wx_ - ex) ** 2 + (wy_ - ey) ** 2) ** 0.5
                 meas["upper_vec2d"] = [ex - sx, ey - sy]
+                # wrist height above the shoulder in shoulder widths (hanging arm ~ -1.5, hand at the shoulder ~ 0)
+                meas["wrist_h"] = (sy - wy_) / meas["shoulder_w"] if meas["shoulder_w"] > 0 else None
                 # Wrist straightness: forearm vs the middle knuckle from MediaPipe Hands. The pose model's
                 # "index" point folds into the palm when you make a fist, so it is not used for this.
                 hp = hand_points.get(arm)

@@ -16,6 +16,7 @@ from fitform.hand_state import classify_hand, palm_direction
 # have their own tests further down, which switch them back on.
 config.READY_HOLD_SECONDS = 0.0
 config.MIN_UP_SECONDS = 0.0
+config.MIN_DOWN_SECONDS = 0.0       # reps count at the top here; the lowering check has its own tests
 config.FIST_CHECK = False      # the hand-check tests switch these on themselves
 config.PALM_CHECK = False
 config.STRAIGHT_CONFIRM_FRAMES = 1   # one frame per position in the short sequences below
@@ -26,6 +27,7 @@ config.REJECT_PAUSE_SECONDS = 0.0   # the pause after a rejected rep has its own
 config.PALM_REJECTS = True          # the palm rules are tested as rejections; tip-only mode has its own test
 config.OUTWARD_STREAK = 99          # the 'fist facing outward' streak pause has its own test
 config.FIST_REJECTS = True          # grip rejections are tested; advisory mode has its own test
+config.HAND_HIDDEN_REJECTS = True   # likewise for 'hand not visible'
 from fitform.calorie_tracker import CalorieTracker
 from fitform.session_logger import SessionLogger, create_app
 
@@ -545,6 +547,19 @@ def test_hand_hidden_too_long_is_not_counted():
     config.FIST_CHECK, config.FAULT_HOLD_SECONDS = False, 0.0
 
 
+def test_hand_not_visible_is_advisory_by_default():
+    """Default settings: a hand the camera cannot find (at the start or during the lift) does not stop the rep."""
+    config.FIST_CHECK, config.FAULT_HOLD_SECONDS, config.HAND_HIDDEN_REJECTS = True, 0.3, False
+    config.FIST_REJECTS = False
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0, None)                    # never seen at the start ...
+    for t, e in ((0.2, 138), (0.4, 130), (0.6, 120)):   # ... nor in the lower part of the lift
+        c.update(m(e), t, None)
+    assert c.update(m(35), 1.0, None) == "counted" and c.count == 1
+    config.FIST_CHECK, config.FAULT_HOLD_SECONDS, config.HAND_HIDDEN_REJECTS = False, 0.0, True
+    config.FIST_REJECTS = True
+
+
 def test_palm_turned_out_for_long_during_lift_rejected():
     """Hand turned out during the lift: the side camera catches it."""
     config.PALM_CHECK, config.FAULT_HOLD_SECONDS = True, 0.3
@@ -748,6 +763,94 @@ C270 HD WEBCAM (usb-xhci-hcd.0-2):
     assert choose(False, [0]) == (0, None)         # no AI camera: webcam is the front
     assert choose(False, [0, 2]) == (0, 2)         # two webcams: second one at the side
     assert choose(False, []) == (None, None)       # nothing found
+
+
+def mh(elbow_deg, h):
+    """Arm measurements plus the wrist height (shoulder widths above the shoulder: hanging ~ -1.5, top ~ 0)."""
+    return dict(m(elbow_deg), wrist_h=h)
+
+
+def test_lift_timed_from_the_wrist_not_the_elbow_angle():
+    """From the front the elbow angle stays 'straight' early in the lift while the wrist already rises
+    (27 Oct clips): the lift time must start when the wrist leaves the bottom, so a slow lift is not 'too fast'."""
+    config.MIN_UP_SECONDS = 0.45
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(mh(170, -1.5), 0.0)
+    c.update(mh(165, -1.2), 0.3)                  # wrist rising, elbow still reads straight
+    c.update(mh(160, -0.8), 0.5)
+    assert c.update(mh(30, 0.0), 0.7) == "counted" and abs(c.last_up_time - 0.7) < 1e-6
+    c.update(mh(170, -1.5), 3.0)                  # fast swing: wrist leaves at 3.0, top 0.3 s later
+    assert c.update(mh(30, 0.0), 3.3) == "rejected" and "too fast" in c.last_reasons
+    config.MIN_UP_SECONDS = 0.0
+
+
+def test_rep_counts_after_a_slow_lowering():
+    config.MIN_DOWN_SECONDS = 0.6
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(mh(170, -1.5), 0.0)
+    assert c.update(mh(30, 0.0), 1.0) is None and c.count == 0     # top reached: wait for the lowering
+    c.update(mh(35, 0.0), 1.5)                                     # holds the top
+    c.update(mh(90, -0.6), 2.0)
+    assert c.update(mh(170, -1.5), 2.6) == "counted" and c.count == 1
+    assert abs(c.last_down_time - 1.1) < 1e-6
+    config.MIN_DOWN_SECONDS = 0.0
+
+
+def test_dropping_the_arm_is_not_counted():
+    config.MIN_DOWN_SECONDS = 0.6
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(mh(170, -1.5), 0.0)
+    c.update(mh(30, 0.0), 1.0)
+    c.update(mh(35, 0.0), 1.5)
+    assert c.update(mh(170, -1.5), 1.8) == "rejected"              # down in 0.3 s
+    assert c.count == 0 and c.attempted == 1 and c.last_reasons == ["lowered too fast"]
+    assert c.reject_counts == {"drop": 1} and c.reject_key == "drop"
+    c.update(mh(170, -1.5), 4.5)                                   # after the pause a proper rep counts
+    c.update(mh(30, 0.0), 5.5)
+    assert c.update(mh(170, -1.5), 6.5) == "counted" and c.count == 1
+    config.MIN_DOWN_SECONDS = 0.0
+
+
+def test_lowering_check_without_wrist_height_uses_the_elbow():
+    config.MIN_DOWN_SECONDS = 0.6
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0)
+    assert c.update(m(30), 1.0) is None
+    assert c.update(m(170), 1.2) == "rejected" and c.reject_key == "drop"
+    config.MIN_DOWN_SECONDS = 0.0
+
+
+def test_curls_need_a_login_first():
+    from fitform.session import curls_allowed
+    assert not curls_allowed(True, False, None)        # nobody logged in: curls are ignored
+    assert curls_allowed(True, False, "steve")         # tapped 'Train on this device'
+    assert curls_allowed(True, True, None)             # session already running: keeps counting
+    assert curls_allowed(False, False, None)           # no phone app (--no-server / --video): guest is fine
+
+
+def test_password_reset():
+    log = SessionLogger(log_dir=tempfile.mkdtemp())
+    assert log.register("Steve", "oldpass1", 70) is None
+    assert log.find_user("steve") == "Steve" and log.find_user("nobody") is None
+    assert log.set_password("Steve", "123") is not None          # too short
+    assert log.set_password("nobody", "newpass1") is not None
+    assert log.set_password("Steve", "newpass1") is None
+    assert log.check_login("Steve", "newpass1") and not log.check_login("Steve", "oldpass1")
+
+
+def test_old_csv_without_user_column_is_upgraded():
+    import csv
+    d = tempfile.mkdtemp()
+    log = SessionLogger(log_dir=d)
+    with open(log.path, "w", newline="", encoding="utf-8") as f:
+        f.write("timestamp,exercise,reps_right,reps_left,reps_total,attempted_total,form_accuracy_pct,"
+                "duration_s,calories_kcal,avg_rep_speed_s\n"
+                "2026-10-20 19:02:29,bicep_curl,10,9,19,39,48.7,122.2,8.32,0.85\n")
+    log.save({"timestamp": "2026-10-22 15:37:57", "user": "steve", "exercise": "bicep_curl", "reps_total": 12})
+    with open(log.path, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["user"] == "guest" and rows[0]["reps_total"] == "19"
+    assert rows[1]["user"] == "steve" and rows[1]["exercise"] == "bicep_curl" and rows[1]["reps_total"] == "12"
 
 
 def test_logger_accounts_and_app():

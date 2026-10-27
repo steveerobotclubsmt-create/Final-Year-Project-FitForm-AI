@@ -24,7 +24,7 @@ from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
 from fitform.plan import make_plan
-from fitform.session import SessionTracker
+from fitform.session import SessionTracker, curls_allowed
 from fitform.session_logger import SessionLogger, local_ip, start_server
 from fitform.session_summary import build_summary, print_summary
 
@@ -148,6 +148,9 @@ def main():
     saved_until, saved_summary, saved_plan = 0.0, None, None
     url = f"http://{local_ip()}:{config.FLASK_PORT}" if (config.FLASK_ENABLED and not args.no_server) else logger.dir
     print(f"Phone page: {url}")
+    login_required = config.REQUIRE_LOGIN and url.startswith("http") and not args.video
+    if login_required:
+        print("Log in on the phone and tap 'Train on this device' - curls are not counted before that")
 
     session_user = None
     qr = None
@@ -232,6 +235,11 @@ def main():
                                             hand_points=hands.points if hands else None,
                                             palms=palms,
                                             side_palms={args.side_arm: side.label} if side else None)
+            logged_in = curls_allowed(login_required, session_tag is not None, logger.device_user())
+            if events and not logged_in:            # nobody logged in yet: curls are not counted or saved
+                feedback.reset()
+                calories.reset()
+                events = []
             if args.debug and now - last_dbg >= 0.5:
                 last_dbg = now
                 print(f"FPS {fps:.1f}")
@@ -250,8 +258,9 @@ def main():
             for arm, event in events:
                 cnt = feedback.counters[arm]
                 ut = cnt.last_up_time
-                lift = f" (lift {ut:.1f} s" + (f", {cnt.last_hand_summary}" if cnt.last_hand_summary else "") + ")" \
-                    if ut is not None else ""
+                dt = cnt.last_down_time
+                lift = f" (lift {ut:.2f} s" + (f", lower {dt:.2f} s" if dt is not None else "") + \
+                    (f", {cnt.last_hand_summary}" if cnt.last_hand_summary else "") + ")" if ut is not None else ""
                 if event == "counted":
                     calories.on_rep(now)
                     gpio.beep()
@@ -315,9 +324,9 @@ def main():
                 if now < saved_until and saved_summary is not None:
                     draw_saved(image, saved_summary, url, (saved_plan or {}).get("goal"))
                 elif not tracker.active and not demo_on and not present:           # nobody in front
-                    draw_idle(image, url, qr, logger.device_user())
+                    draw_idle(image, url, qr, logger.device_user(), login_required)
                 elif not tracker.active and not demo_on and qr is not None and not logger.device_user():
-                    draw_qr_corner(image, qr, url)                                  # not logged in yet
+                    draw_qr_corner(image, qr, url, login_required)                  # not logged in yet
                 if tracker.active and not (now < saved_until):
                     left = tracker.seconds_left(now)
                     if left is not None and left <= 10:

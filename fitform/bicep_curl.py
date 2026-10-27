@@ -85,6 +85,7 @@ REASON_TEXT = {
     "hand_hidden": "hand not visible",
     "fast": "too fast",
     "slow": "too slow",
+    "drop": "lowered too fast",
     "not_lowered": "arm not straightened at the bottom",
     "arm_tilt": "upper arm not pointing down",
     "arm_forward": "elbow moved forward/back",
@@ -100,6 +101,7 @@ FIX_TEXT = {
     "hand_hidden": "Keep your hand in view of the camera",
     "fast": "Lift a little slower",
     "slow": "Lift a little faster",
+    "drop": "Lower the weight slowly",
     "not_lowered": "Straighten your arm fully at the bottom",
 }
 REASON_ORDER = ("arm_tilt", "arm_forward", "elbow", "hand_hidden", "fist", "palm_dir", "wrist", "fast", "slow")
@@ -111,7 +113,9 @@ class BicepCurlCounter:
        facing forward or towards the body. This is the gate - a rep only counts if the start was good.
     2. Lift: elbow movement, bent wrist, wrong hand or a hidden hand reject the rep only if they last
        longer than FAULT_HOLD_SECONDS, so one-frame detection blips do not spoil a good rep.
-    3. Tempo: the lift must not be too fast or too slow."""
+    3. Tempo: the lift must not be too fast or too slow (timed from the wrist's height when it is known).
+    4. Lowering: with MIN_DOWN_SECONDS > 0 a good lift is only counted once the arm is back at the bottom,
+       and not if it was dropped faster than that."""
 
     def __init__(self, arm, alpha=config.SMOOTHING_ALPHA):
         self.arm = arm
@@ -153,6 +157,12 @@ class BicepCurlCounter:
         self._len_ref = None           # upper-arm length / shoulder width at the start of the rep
         self._start_tilt = None
         self._lift_palm = [0, 0]       # [good, bad] palm readings: down position + lower part of the lift
+        self._bottom_h = None          # wrist height while the arm hangs straight
+        self._leave_t = None           # last time the wrist was at the bottom (start of the lift)
+        self._pending = False          # good lift waiting for the lowering check
+        self._top_h = None             # highest wrist height of the current top
+        self._left_top_t = None        # last time the wrist was at the top (start of the lowering)
+        self.last_down_time = None     # lowering time of the last finished rep
         self.hand = None
         self.palm = None
         self.last = {}             # latest measurements + form flags, for display/feedback
@@ -200,7 +210,8 @@ class BicepCurlCounter:
     @staticmethod
     def _advisory():
         """Reasons that are reported but do not stop a rep from counting."""
-        return ({"palm_dir"} if not config.PALM_REJECTS else set()) | ({"fist"} if not config.FIST_REJECTS else set())
+        return (({"palm_dir"} if not config.PALM_REJECTS else set()) | ({"fist"} if not config.FIST_REJECTS else set())
+                | ({"hand_hidden"} if not config.HAND_HIDDEN_REJECTS else set()))
 
     def _hold(self, key, on, now):
         """True once fault `key` has been on continuously for longer than its hold time."""
@@ -219,11 +230,13 @@ class BicepCurlCounter:
         # Arm out of view for a while (person walked away): ask for the start position again.
         if self._last_seen is not None and now - self._last_seen > config.ARM_LOST_RESET_SECONDS:
             self.ready, self.stage, self._straight_since = False, None, None
+            self._pending, self._leave_t = False, None
         self._last_seen = now
 
         elbow = self._ema("elbow", m["elbow"])
         wrist = self._ema("wrist", m.get("wrist"))
         upper = self._ema("upper_vec", m.get("upper_vec"))
+        wrist_h = self._ema("wrist_h", m.get("wrist_h"))
         self.hand, self.palm = hand, palm
 
         # first rep: the arm must be properly straight; later reps restart a little earlier (REARM_ANGLE)
@@ -246,6 +259,39 @@ class BicepCurlCounter:
                 self.ready = True
         elif not straight_raw:
             self._straight_since = None
+
+        # wrist height: its level with the arm hanging straight, and whether it is there now
+        if wrist_h is not None and straight_raw:
+            self._bottom_h = wrist_h if self._bottom_h is None else 0.8 * self._bottom_h + 0.2 * wrist_h
+        if wrist_h is not None and self._bottom_h is not None:
+            at_bottom = wrist_h <= self._bottom_h + config.WRIST_MOVE_MARGIN
+        else:
+            at_bottom = straight_raw                # no wrist height: fall back to the straight arm
+        if at_bottom:
+            self._leave_t = now
+
+        event = None
+        # Lowering after a good lift: the rep is decided once the arm is back at the bottom.
+        if self._pending:
+            if wrist_h is not None:
+                self._top_h = wrist_h if self._top_h is None else max(self._top_h, wrist_h)
+                if wrist_h >= self._top_h - config.WRIST_MOVE_MARGIN:
+                    self._left_top_t = now
+            elif elbow < config.UP_ANGLE:
+                self._left_top_t = now
+            if at_bottom:
+                self._pending = False
+                down = now - self._left_top_t
+                self.last_down_time = down
+                if down < config.MIN_DOWN_SECONDS:
+                    self.form_ok = False
+                    self.last_reasons = [REASON_TEXT["drop"]]
+                    self.reject_key = "drop"
+                    self.reject_counts["drop"] = self.reject_counts.get("drop", 0) + 1
+                    self.blocked_until = now + config.REJECT_PAUSE_SECONDS
+                    event = "rejected"
+                else:
+                    event = self._count()
 
         # Remember where the upper arm is while the arm is straight (start of each rep).
         if upper is not None and straight_raw:
@@ -282,8 +328,7 @@ class BicepCurlCounter:
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
 
-        event = None
-        if straight and self.ready and now >= self.blocked_until:
+        if straight and self.ready and now >= self.blocked_until and not self._pending:
             # Arm fully straight: every new attempt starts here with a clean slate, so a
             # half rep that went wrong does not carry its fault into the next proper rep.
             self.form_ok = True
@@ -327,7 +372,10 @@ class BicepCurlCounter:
                 self._rose_since_top = True
             elif self._rose_since_top and self._top_frames >= config.TOP_CONFIRM_FRAMES:
                 self._rose_since_top = False
-                self.attempted += 1
+                if self._pending:
+                    self._pending = False           # the lift waiting for its lowering becomes this rejection
+                else:
+                    self.attempted += 1
                 self.form_ok = False
                 self.last_up_time = None
                 self.last_hand_summary = ""
@@ -341,8 +389,11 @@ class BicepCurlCounter:
             self.attempted += 1
             if not self._start_checked:
                 self._reasons |= self._start_position_reasons(now)
-            up_time = now - self._rep_start if self._rep_start is not None else None
+            # the lift starts when the wrist leaves the bottom (or, without wrist height, when the arm bends)
+            start = self._leave_t if (wrist_h is not None and self._leave_t is not None) else self._rep_start
+            up_time = now - start if start is not None else None
             self.last_up_time = up_time
+            self.last_down_time = None
             if config.PALM_CHECK and self._side_log and self._rep_start is not None:
                 # side camera: same priority as the front. Its reading stays valid for the whole curl (the
                 # forearm turns in the picture plane of a side camera), so the down position AND the lift count.
@@ -383,17 +434,19 @@ class BicepCurlCounter:
                 self.grip_flags += 1
             if not config.FIST_REJECTS:
                 self._reasons.discard("fist")      # grip is advice only: a bottle / dumbbell can look like an open hand
+            if not config.HAND_HIDDEN_REJECTS:
+                self._reasons.discard("hand_hidden")
             if not config.PALM_REJECTS and "palm_dir" in self._reasons:
                 # palm direction is advice only (21 Oct: the front camera's fist-direction reading is not
                 # consistent enough to fail a rep) - the rep can still count, with a tip on screen
                 self._reasons.discard("palm_dir")
                 self.palm_tip = True
             self.form_ok = not self._reasons
-            if self.form_ok:
-                self.count += 1
-                if up_time is not None:
-                    self.rep_times.append(up_time)
-                event = "counted"
+            if self.form_ok and config.MIN_DOWN_SECONDS > 0:
+                self._pending = True                # good lift: counted once it has been lowered slowly
+                self._top_h, self._left_top_t = wrist_h, now
+            elif self.form_ok:
+                event = self._count()
             else:
                 self.last_reasons = [REASON_TEXT[r] for r in REASON_ORDER if r in self._reasons]
                 self.reject_key = next((r for r in REASON_ORDER if r in self._reasons), None)
@@ -409,6 +462,12 @@ class BicepCurlCounter:
             "tilt": tilt, "len_ratio": len_ratio, "foreshortened": foreshortened, "arm_tilted": arm_tilted, "arm_forward": arm_forward,
         }
         return event
+
+    def _count(self):
+        self.count += 1
+        if self.last_up_time is not None:
+            self.rep_times.append(self.last_up_time)
+        return "counted"
 
     def reset(self):
         self.__init__(self.arm, self.alpha)

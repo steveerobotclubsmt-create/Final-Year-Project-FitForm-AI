@@ -89,6 +89,23 @@ class SessionLogger:
         u = self._users().get(name or "")
         return bool(u) and check_password_hash(u["pw"], password or "")
 
+    def find_user(self, name):
+        """The stored spelling of a username, ignoring upper/lower case, or None."""
+        return next((u for u in self._users() if u.lower() == (name or "").lower()), None)
+
+    def set_password(self, name, password):
+        """New password for an existing account (tools/reset_password.py - run on the device itself)."""
+        from werkzeug.security import generate_password_hash
+        if len(password or "") < 6:
+            return "Password: at least 6 characters"
+        with self._lock:
+            users = self._users()
+            if name not in users:
+                return f"No account called {name!r}"
+            users[name]["pw"] = generate_password_hash(password, method="pbkdf2:sha256:200000")
+            self._write_users(users)
+        return None
+
     def user_weight(self, name):
         u = self._users().get(name or "")
         return u["weight"] if u else config.USER_WEIGHT_KG
@@ -121,9 +138,33 @@ class SessionLogger:
         self._device_user = None
 
     # ---------- sessions ----------
+    def _upgrade_csv(self):
+        """A CSV from an older version (different columns, e.g. no 'user') is rewritten with the current
+        columns, so new rows do not land under the wrong headings."""
+        with open(self.path, newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            if header == FIELDS:
+                return
+            rows = []
+            for r in reader:
+                if len(r) == len(FIELDS):            # already written with the current columns
+                    rows.append(dict(zip(FIELDS, r)))
+                elif header and len(r) == len(header):
+                    rows.append(dict(zip(header, r)))
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            for r in rows:
+                writer.writerow({k: r.get(k) or ("guest" if k == "user" else "") for k in FIELDS})
+        os.replace(tmp, self.path)
+
     def save(self, summary, plan=None):
-        new_file = not os.path.exists(self.path)
         with self._lock:
+            new_file = not os.path.exists(self.path)
+            if not new_file:
+                self._upgrade_csv()
             with open(self.path, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDS)
                 if new_file:

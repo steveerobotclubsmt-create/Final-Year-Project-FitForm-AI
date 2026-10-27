@@ -40,8 +40,18 @@ USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct:
 # ---- Rep quality ----
 READY_HOLD_SECONDS = 0.5     # before the first rep (or after the arm left the view) hold the arm straight this long
 ARM_LOST_RESET_SECONDS = 2.0 # arm out of view longer than this -> must show the ready position again
-MIN_UP_SECONDS = 0.3         # lifting (straight -> top) faster than this = "too fast" (lowered from 0.4 on 21 Oct)
+MIN_UP_SECONDS = 0.4         # lifting (wrist leaves the bottom -> top) faster than this = "too fast".
+                             # Labelled clips 27 Oct (wrist-height timing): slow proper lifts 0.53-1.07 s,
+                             # fast swings 0.29-0.50 s
 MAX_UP_SECONDS = 5.0         # lifting slower than this = "too slow", rep not counted
+MIN_DOWN_SECONDS = 0.55      # lowering (wrist leaves the top -> back at the bottom) faster than this = "lowered
+                             # too fast": the rep is judged when the arm is back down, not at the top.
+                             # 27 Oct clips: slow proper 0.63-1.49 s, swings 0.17-0.60 s, fast drops 0.30-0.48 s.
+                             # 0 = no lowering check (rep counted at the top)
+WRIST_MOVE_MARGIN = 0.2      # wrist this far (in shoulder widths) from its bottom / top level = it has left it
+                             # (wrist height is used for the timing: from the front the forearm comes towards the
+                             # camera and the 2D elbow angle only changes late in the lift, which read slow lifts
+                             # as 'too fast'; the wrist's height rises steadily)
 STRAIGHT_CONFIRM_FRAMES = 2  # arm must read straight this many frames in a row (ignores one-frame angle jumps)
 FORESHORTEN_RATIO = 0.55     # forearm looks shorter than this share of the upper arm = pointing at the camera;
                              # those frames are not used to finish a rep (the 2D angle is unreliable then)
@@ -67,6 +77,9 @@ PALM_SIGN = 1                # set to -1 if the terminal shows palm 'back' when 
 PALM_INWARD_SIGN = 1         # set to -1 if the terminal shows 'outward' when the palm faces the body
 FIST_REJECTS = False         # False = 'hand not clenched' is advice only (reported on the phone page with pictures):
                              # a hand round a bottle or dumbbell can look open to the camera (21-22 Oct tests)
+HAND_HIDDEN_REJECTS = False  # False = 'hand not visible' does not stop a rep: the hand check only serves the grip
+                             # and fist direction, which are advice only. Live test 27 Oct: an empty relaxed hand
+                             # 2-3 m away was often not found by MediaPipe Hands (8 of 20 proper curls rejected)
 PALM_REJECTS = False         # False = palm/fist direction only gives a tip ("Keep your palm facing your body"),
                              # the rep still counts. The labelled runs of 21 Oct showed the same correct right-arm
                              # curl reading anywhere from 0 to +-1.0, so it is not reliable enough to fail a rep.
@@ -117,6 +130,8 @@ END_AWAY_SECONDS = 5.0       # session ends when nobody is seen for this long ..
 END_IDLE_SECONDS = 30.0      # ... or no curl is finished for this long (after at least one curl)
 SAVED_BANNER_SECONDS = 12.0  # 'Session saved - open ... on your phone' stays on screen this long
 DEVICE_LOGIN_MINUTES = 10    # 'Start on this device' from the phone is valid this long if no session starts
+REQUIRE_LOGIN = True         # curls only count after someone taps 'Train on this device' (no guest sessions);
+                             # ignored with --no-server or --video, where nobody can log in
 MAX_SNAPSHOTS = 6            # hand pictures kept per session for the turned-out-fist warning
 LOG_DIR = "logs"
 CSV_FILENAME = "sessions.csv"

@@ -168,7 +168,7 @@ def draw_saved(image, summary, url, goal=None):
     return image
 
 
-def draw_idle(image, url="", qr=None, user=None):
+def draw_idle(image, url="", qr=None, user=None, login_required=False):
     """No session running: QR code to log in on the phone, or a greeting when someone is logged in."""
     h, w = image.shape[:2]
     overlay = image.copy()
@@ -180,7 +180,8 @@ def draw_idle(image, url="", qr=None, user=None):
         y = int(h * 0.45)
     else:
         lines = [("FitForm AI", 1.1, orange), ("Scan to log in on your phone", 0.7, white), (url, 0.6, white),
-                 ("(or just start curling as a guest)", 0.55, (160, 160, 160))]
+                 ("then tap 'Train on this device'" if login_required else "(or just start curling as a guest)",
+                  0.55, (160, 160, 160))]
         y = int(h * 0.12)
         if qr is not None:
             size = int(min(h, w) * 0.42)
@@ -196,9 +197,16 @@ def draw_idle(image, url="", qr=None, user=None):
     return image
 
 
-def draw_qr_corner(image, qr, url):
+def draw_qr_corner(image, qr, url, login_required=False):
     """Small QR code in the corner while someone stands there without being logged in."""
     h, w = image.shape[:2]
+    if login_required:
+        text = "Log in on your phone first - curls are not counted yet"
+        (tw, th), _ = cv2.getTextSize(text, FONT, 0.7, 2)
+        fs = min(0.7, 0.7 * (w - 20) / max(tw, 1))
+        (tw, th), _ = cv2.getTextSize(text, FONT, fs, 2)
+        cv2.rectangle(image, ((w - tw) // 2 - 8, 180), ((w + tw) // 2 + 8, 180 + th + 16), (15, 15, 15), -1)
+        cv2.putText(image, text, ((w - tw) // 2, 188 + th), FONT, fs, (0, 200, 255), 2)
     size = 120
     big = cv2.resize(qr, (size, size), interpolation=cv2.INTER_NEAREST)
     big = cv2.cvtColor(cv2.copyMakeBorder(big, 6, 6, 6, 6, cv2.BORDER_CONSTANT, value=255), cv2.COLOR_GRAY2BGR)
