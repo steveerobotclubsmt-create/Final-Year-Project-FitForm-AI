@@ -1,5 +1,7 @@
 # FitForm AI - Pose-Based Personal Trainer
+
 **Project videos:** see [VIDEOS.md](VIDEOS.md)
+
 Individual Major Project (6FTC2062), BEng Robotics and Artificial Intelligence, University of Hertfordshire.
 
 FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count bicep curl repetitions and check exercise form in real time. It gives feedback through an on-screen overlay, green/red LEDs and a buzzer, and logs each session to a CSV file that can be downloaded over Wi-Fi.
@@ -23,27 +25,35 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 ```
 fitform-ai/
 ├── main.py                  # entry point - runs the whole system
+├── VIDEOS.md                # links to the demo videos
 ├── fitform/
-│   ├── config.py            # all settings (cameras, thresholds, GPIO pins, weight...)
+│   ├── config.py            # all settings (cameras, thresholds, GPIO pins, sessions...)
+│   ├── camera_detect.py     # finds the cameras: AI Camera front, USB webcam side or front
 │   ├── camera_thread.py     # background camera capture (no lag / buffering)
 │   ├── pose_engine.py       # MediaPipe Pose wrapper
 │   ├── bicep_curl.py        # joint angles + rep-counting state machine
-│   ├── hand_check.py        # MediaPipe Hands: palm direction (and fist / open) per arm
-│   ├── hand_state.py        # palm direction + fist/open classification (no camera needed)
+│   ├── hand_check.py        # MediaPipe Hands: fist / grip and fist direction per arm
+│   ├── hand_state.py        # fist / grip and direction classification (no camera needed)
+│   ├── fist_calib.py        # optional per-arm fist-direction calibration
+│   ├── side_palm.py         # side camera: palm direction and grip
 │   ├── feedback_engine.py   # runs the rep counters and chooses the feedback text
-│   ├── display_ui.py        # on-screen overlay
+│   ├── display_ui.py        # on-screen overlay, demo, QR code and 'session saved' screens
 │   ├── gpio_feedback.py     # LEDs + buzzer (auto-disabled on a laptop)
 │   ├── calorie_tracker.py   # MET-based calorie estimate
+│   ├── session.py           # ends a session when the user walks away or stops
 │   ├── session_summary.py   # end-of-session totals
-│   └── session_logger.py    # CSV logging + Flask endpoints
+│   ├── plan.py              # goal for the next session (ACSM / WHO / Compendium)
+│   └── session_logger.py    # accounts, session storage and the phone app (Flask)
+├── tools/
+│   └── fist_calibrate.py    # builds the fist-direction calibration from labelled runs
 ├── prototypes/
 │   └── bicep_curl_single_camera.py   # original single-file laptop prototype
 ├── docs/
 │   ├── figures/             # block diagrams and figures for the logbooks/report
 │   └── photos/              # progress photos
 ├── tests/
-│   └── test_logic.py        # tests for counting, calories and logging (no camera needed)
-├── logs/                    # session CSV is written here (not uploaded to GitHub)
+│   └── test_logic.py        # tests for counting, goals, accounts and the app (no camera needed)
+├── logs/                    # sessions, accounts and hand pictures (not uploaded to GitHub)
 └── requirements.txt
 ```
 
