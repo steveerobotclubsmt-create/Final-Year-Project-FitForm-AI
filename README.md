@@ -2,6 +2,8 @@
 
 **Project videos:** see [VIDEOS.md](VIDEOS.md)
 
+Project documents (Gantt chart, figures): [docs/](docs/README.md)
+
 Individual Major Project (6FTC2062), BEng Robotics and Artificial Intelligence, University of Hertfordshire.
 
 FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count bicep curl repetitions and check exercise form in real time. It gives feedback through an on-screen overlay, green/red LEDs and a buzzer, and logs each session to a CSV file that can be downloaded over Wi-Fi.
