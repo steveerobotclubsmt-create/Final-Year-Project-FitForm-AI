@@ -64,7 +64,8 @@ fitform-ai/
 ├── docs/
 │   ├── README.md            # list of the project documents
 │   ├── gantt/               # Gantt chart (Excel, PDF, picture)
-│   └── figures/             # block diagrams and figures for the logbooks/report
+│   ├── figures/             # block diagrams and figures for the logbooks/report
+│   └── photos/              # photos of the hardware and parts
 ├── tests/
 │   └── test_logic.py        # tests for counting, goals, accounts and the app (no camera needed)
 ├── logs/                    # sessions, accounts, hand pictures, clips and training crops (not uploaded to GitHub)
