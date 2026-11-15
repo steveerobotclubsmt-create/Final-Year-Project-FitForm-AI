@@ -18,6 +18,9 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 - Personalised training report (PDF) for any period: calories burned, reps, form, training days, what to work on and progress, downloaded from the phone page or made for every active account with `tools/make_reports.py`. See "Training report" below
 - Start-up demo: an animated stick figure showing a correct curl and the key rules (fist facing the body)
 - No keyboard needed: the window opens full screen, and a session ends when you walk away (5 s) or stop curling (30 s)
+- Steady display: the drawn arm points are smoothed (One-Euro filter; the counting has its own smoothing), and the
+  "Hi <name>" / QR screen only appears once nobody has been seen for 2 s, so a moment of lost tracking does not
+  flip the screen
 - Camera watchdog: if the Pi camera sends no picture for 3 s (seen when the Pi was hot and throttled), it is restarted by itself
 - Accounts on the phone app (username + password, body weight). The device screen shows a QR code: scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Curls only count after logging in (`REQUIRE_LOGIN` in `fitform/config.py`; not needed with `--no-server` or `--video`). A forgotten password can be reset on the device with `tools/reset_password.py`
 - Phone app dashboard: next session goal (sets x reps per arm, kcal, minutes), sessions this week, calories per session against each session's goal, last session, why curls were not counted, history, CSV download
@@ -141,7 +144,12 @@ Optional: `tools/fist_calibrate.py` builds a per-arm calibration of the fist-dir
 `--debug` runs (instructions at the top of the file). Thresholds are in `fitform/config.py`.
 
 ### Camera set-up
-- Stand about **2-3 m** from the front camera so your whole upper body, elbows and both hands stay in view.
+- Stand about **2-3 m** from the front camera so your **head**, whole upper body, elbows and both hands stay in
+  view. MediaPipe Pose finds a person far more reliably with the head in the picture: in a recording with the head
+  cut off (15 Nov) it found the person in 40 % of pictures, against 69 % with the face visible; when it loses you,
+  the arm drawing jumps and the counting pauses.
+- Keep the Pi cool (a fan, e.g. the Raspberry Pi 5 Active Cooler). Without one it reached 95 C on 15 Nov and
+  slowed its CPU to 1.0 GHz, and FitForm dropped from about 15 to 7-9 FPS.
 - Side webcam: level with your hip, as close to 90 degrees from the front as the cable allows.
 - Good, even lighting; avoid a bright window behind you.
 

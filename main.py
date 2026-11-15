@@ -19,14 +19,14 @@ from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
 from fitform.coach import Coach
-from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, draw_saved, \
-    fit_to_screen
+from fitform.display_ui import ArmSmoother, draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, \
+    draw_saved, fit_to_screen
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
 from fitform.plan import make_plan
-from fitform.session import SessionTracker, curls_allowed
+from fitform.session import SessionTracker, curls_allowed, nobody_there
 from fitform.session_logger import SessionLogger, local_ip, start_server
 from fitform.session_summary import build_summary, counts_as_session, print_summary
 from fitform.voice import Voice
@@ -167,6 +167,8 @@ def main():
     tracker = SessionTracker()
     snaps, session_tag = [], None
     saved_until, saved_summary, saved_plan = 0.0, None, None
+    last_present = None                         # last time someone was seen (for the 'nobody there' screen)
+    arm_smoother = ArmSmoother() if config.DRAW_SMOOTH else None
     url = f"http://{local_ip()}:{config.FLASK_PORT}" if (config.FLASK_ENABLED and not args.no_server) else logger.dir
     print(f"Phone page: {url}")
     login_required = config.REQUIRE_LOGIN and url.startswith("http") and not args.video
@@ -352,6 +354,11 @@ def main():
             # skeleton for a while after the person has left, which kept the session from ending)
             present = landmarks is not None and sum(
                 landmarks.landmark[i].visibility for i in (11, 12)) / 2 >= config.PRESENCE_VISIBILITY
+            # for the 'nobody there' screen one clear shoulder is enough: standing close to the camera, one shoulder
+            # can read unclear while the person is plainly there (15 Nov recording: 'Hi Steve' for 4.5 s)
+            if landmarks is not None and max(landmarks.landmark[i].visibility for i in (11, 12)) >= \
+                    config.PRESENCE_VISIBILITY:
+                last_present = now
             if tracker.update(now, present, bool(events) and present):
                 why = "nobody seen" if not present else "no curl"
                 print(f"[SESSION] ended ({why})")
@@ -370,7 +377,8 @@ def main():
             if not args.headless:
                 if landmarks is not None:
                     PoseEngine.draw_skeleton(image, landmarks)
-                for arm, pts in drawn.items():
+                shown = arm_smoother.update(drawn, now) if arm_smoother else drawn
+                for arm, pts in shown.items():
                     draw_arm(image, pts, feedback.counters[arm], show_angle=args.debug_screen)
                 draw_hud(image, feedback, calories.calories(now), calories.active_seconds(now), fps)
                 if side:
@@ -383,7 +391,7 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
                 if now < saved_until and saved_summary is not None:
                     draw_saved(image, saved_summary, url, (saved_plan or {}).get("goal"))
-                elif not tracker.active and not demo_on and not present:           # nobody in front
+                elif not tracker.active and not demo_on and nobody_there(now, last_present):   # nobody in front
                     draw_idle(image, url, qr, logger.device_user(), login_required)
                 elif not tracker.active and not demo_on and qr is not None and not logger.device_user():
                     draw_qr_corner(image, qr, url, login_required)                  # not logged in yet

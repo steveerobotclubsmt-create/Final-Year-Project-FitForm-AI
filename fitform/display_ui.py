@@ -15,6 +15,48 @@ WHITE = (255, 255, 255)
 YELLOW = (0, 255, 255)
 
 
+class ArmSmoother:
+    """Steadies the drawn shoulder / elbow / wrist points with a One-Euro filter (Casiez et al., CHI 2012): strong
+    smoothing while a point is nearly still, where the pose model's frame-to-frame wobble shows as jitter, and
+    little while it moves fast, so the drawing does not lag behind the arm. Only the drawing uses it - the rep
+    counter keeps its own smoothing of the measured angles."""
+
+    def __init__(self, min_cutoff=None, beta=None, reset_after=0.5):
+        self.min_cutoff = config.DRAW_SMOOTH_MIN_CUTOFF if min_cutoff is None else min_cutoff   # Hz, when still
+        self.beta = config.DRAW_SMOOTH_BETA if beta is None else beta     # how fast the cut-off rises with speed
+        self.d_cutoff = 1.0                                               # Hz, for the speed estimate
+        self.reset_after = reset_after        # arm not drawn this long: start again (no slide from an old spot)
+        self._state = {}                      # (arm, joint) -> (time, position, speed)
+
+    @staticmethod
+    def _alpha(cutoff, dt):
+        tau = 1.0 / (2 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def update(self, drawn, now):
+        """drawn: {arm: {joint: [x, y]}} for this frame -> the same with smoothed integer points."""
+        out = {}
+        for arm, pts in drawn.items():
+            sm = {}
+            for joint, p in pts.items():
+                p = np.array(p, float)
+                key = (arm, joint)
+                st = self._state.get(key)
+                if st is None or now - st[0] > self.reset_after or now <= st[0]:
+                    self._state[key] = (now, p, np.zeros(2))
+                    sm[joint] = [int(round(p[0])), int(round(p[1]))]
+                    continue
+                t0, x0, v0 = st
+                dt = now - t0
+                v = v0 + self._alpha(self.d_cutoff, dt) * ((p - x0) / dt - v0)
+                cutoff = self.min_cutoff + self.beta * float(np.linalg.norm(v))
+                x = x0 + self._alpha(cutoff, dt) * (p - x0)
+                self._state[key] = (now, x, v)
+                sm[joint] = [int(round(x[0])), int(round(x[1]))]
+            out[arm] = sm
+        return out
+
+
 def draw_arm(image, pts, counter, show_angle=False):
     color = GREEN if counter.form_ok else RED
     for joint in ("shoulder", "elbow", "wrist"):

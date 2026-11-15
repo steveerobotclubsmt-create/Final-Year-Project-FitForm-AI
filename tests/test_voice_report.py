@@ -429,6 +429,35 @@ def test_make_reports_tool_writes_one_pdf_per_active_account():
         assert "anna: no sessions" in out.stdout
 
 
+# ---------- display: 'nobody there' screen and the drawn arm ----------
+def test_nobody_there_screen_waits_for_the_grace_time():
+    from fitform.session import nobody_there
+    assert nobody_there(10.0, None, grace=2.0)                 # nobody seen yet
+    assert not nobody_there(11.5, 10.0, grace=2.0)             # lost for 1.5 s: still the live picture
+    assert nobody_there(12.0, 10.0, grace=2.0)                 # 2 s: really gone
+
+
+def test_drawn_arm_is_steady_when_still_and_follows_fast_moves():
+    import random
+    from fitform.display_ui import ArmSmoother
+    random.seed(1)
+    sm = ArmSmoother()                                          # the settings in config.py
+    raw, shown = [], []
+    for k in range(60):                                         # arm held still, model wobbles +-6 px, 10 FPS
+        p = [400 + random.uniform(-6, 6), 300 + random.uniform(-6, 6)]
+        raw.append(p[0])
+        shown.append(sm.update({"right": {"wrist": p}}, k * 0.1)["right"]["wrist"][0])
+    spread = lambda v: max(v[20:]) - min(v[20:])
+    assert spread(shown) < 0.6 * spread(raw), (spread(shown), spread(raw))
+    t = 6.0
+    for k in range(10):                                         # fast lift: 60 px per frame
+        t += 0.1
+        out = sm.update({"right": {"wrist": [400 + 60 * (k + 1), 300]}}, t)["right"]["wrist"]
+    assert abs(out[0] - 1000) < 15, out                         # close behind, not lagging far
+    out = sm.update({"right": {"wrist": [100, 100]}}, t + 2.0)["right"]["wrist"]
+    assert out == [100, 100]                                    # arm was gone: starts fresh, no slide
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

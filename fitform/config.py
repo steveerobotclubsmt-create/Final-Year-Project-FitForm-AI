@@ -121,6 +121,11 @@ HAND_MATCH_DIST = 0.18       # hand must be within this fraction of the frame wi
 # ---- Screen ----
 FULLSCREEN = True            # window fills the whole screen at start (no keyboard needed); --windowed turns it off
 MESSAGE_HOLD_SECONDS = 1.0   # a feedback message stays at least this long (stops the text flickering)
+DRAW_SMOOTH = True           # steady the drawn arm points (display only; counting has its own smoothing)
+DRAW_SMOOTH_MIN_CUTOFF = 0.3 # Hz: lower = steadier while the arm is still, but slower to settle
+DRAW_SMOOTH_BETA = 0.02      # higher = follows fast movements more closely (less lag, more jitter). Simulated at
+                             # 8-15 FPS (15 Nov): about half the still-arm wobble removed, at most ~13 px behind
+                             # a fast 1 s lift; smoother settings lagged 20-30 px
 
 
 # ---- Spoken feedback (Piper text-to-speech, offline; see voice.py / coach.py) ----
@@ -148,6 +153,8 @@ BUZZER_BEEP_SECONDS = 0.1
 # ---- Session logging / Flask ----
 # ---- Sessions, summary and phone page ----
 PRESENCE_VISIBILITY = 0.5    # both shoulders must be seen at least this clearly to count as 'someone is there'
+IDLE_SCREEN_GRACE_SECONDS = 2.0  # the 'Hi <name>' / QR screen only after nobody has been seen this long (the pose
+                             # model can lose someone who is still there for a moment - 15 Nov recording)
 END_AWAY_SECONDS = 5.0       # session ends when nobody is seen for this long ...
 END_IDLE_SECONDS = 30.0      # ... or no curl is finished for this long (after at least one curl)
 AWAY_GRACE_SECONDS = 1.0     # 'Saving session in ...' only once nobody has been seen this long (not while you

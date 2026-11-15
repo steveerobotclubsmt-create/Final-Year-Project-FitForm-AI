@@ -10,6 +10,15 @@ def curls_allowed(login_required, session_running, device_user):
     return not login_required or session_running or bool(device_user)
 
 
+def nobody_there(now, last_present, grace=None):
+    """True once nobody has been seen for `grace` seconds (IDLE_SCREEN_GRACE_SECONDS). The pose model can lose a
+    person who is still there for a frame or two (head out of the picture, fast movement, low frame rate);
+    without this the screen flipped to the 'Hi <name>' / QR screen and back (recording of 15 Nov).
+    `last_present`: the last time at least one shoulder was clearly seen."""
+    grace = config.IDLE_SCREEN_GRACE_SECONDS if grace is None else grace
+    return last_present is None or now - last_present >= grace
+
+
 class SessionTracker:
     def __init__(self, away_s=None, idle_s=None):
         self.away_s = config.END_AWAY_SECONDS if away_s is None else away_s
