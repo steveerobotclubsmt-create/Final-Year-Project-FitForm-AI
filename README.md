@@ -16,7 +16,9 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 - When a curl is not counted, the screen shows why and what to do (e.g. "Keep your upper arm pointing down"), with a short pause before the next rep
 - Spoken feedback (offline Piper voice): the rep count, why a rep was not counted and what to do, live arm warnings during the lift, a greeting after logging in and the session result with calories burned. Only feedback the system is reliable at is spoken - the hand checks are not - and it never repeats itself or talks over itself. See "Spoken feedback" below
 - Personalised training report (PDF) for any period: calories burned, reps, form, training days, what to work on and progress, downloaded from the phone page or made for every active account with `tools/make_reports.py`. See "Training report" below
-- Start-up demo: an animated stick figure showing a correct curl and the key rules (fist facing the body)
+- Curl guide: an animated stick figure showing a correct curl and the key rules (fist facing the body), shown
+  once the position check has passed - so the person is standing where they can see it - then "Start curling".
+  Curls made during the guide are not counted (`--no-demo` skips it)
 - No keyboard needed: the window opens full screen, and a session ends when you walk away (5 s) or stop curling (30 s)
 - Position check before the first rep: head, upper body and both hands in view, facing the camera, a sensible
   distance and roughly in the middle - a checklist on screen and one spoken instruction at a time ("Step back so
@@ -201,8 +203,10 @@ curls, using only the pose landmarks (`fitform/position.py`, limits in `fitform/
 | Distance | shoulder width as a share of the picture | "Come a little closer" |
 | In the middle | middle of the shoulders | "Move a little to your left / right" |
 
-The screen shows the checklist and the first instruction; each instruction is spoken once. When everything has
-been good for 1 s: "Good position - start curling". Curls before that are not counted. During the session a
+The screen shows the checklist and the first instruction; each instruction is spoken once (said again only after
+nobody has been seen for 10 s - standing too close, the pose model can lose a person for a few seconds). When
+everything has been good for 1 s: "Good position. Here is how to do a bicep curl." - the curl guide plays
+(8 s), then "Start curling". Curls before that are not counted. During the session a
 problem that lasts 2 s is shown and said once, but counting goes on.
 
 The limits come from measurements (15 Nov): 5 recorded clips with good framing (1847 pictures) against a

@@ -167,6 +167,8 @@ POSITION_NECK_MAX = 0.95     # the model makes up when the head is cut off often
 POSITION_NECK_TORSO_MIN = 0.33   # turned sideways: nose height in torso lengths instead (real head 0.38-0.52)
 POSITION_NECK_TORSO_MAX = 0.62
 POSITION_DRIFT_SECONDS = 2.0 # during a session: a position problem lasting this long is shown and said (once)
+POSITION_FORGET_SECONDS = 10.0  # the spoken instructions are only said again after nobody was seen this long
+                             # (standing too close, the pose model can lose a person for a few seconds - 15 Nov)
 
 PRESENCE_VISIBILITY = 0.5    # both shoulders must be seen at least this clearly to count as 'someone is there'
 IDLE_SCREEN_GRACE_SECONDS = 2.0  # the 'Hi <name>' / QR screen only after nobody has been seen this long (the pose

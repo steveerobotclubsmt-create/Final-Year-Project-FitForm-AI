@@ -52,7 +52,8 @@ class Coach:
         for n in range(1, 31):
             out += [str(n), f"Right, {n}", f"Left, {n}"]
         from .position import ADVICE
-        out += [f"{a}." for a in ADVICE.values()] + ["Good position. Start curling."]
+        out += [f"{a}." for a in ADVICE.values()] + ["Good position. Start curling.", "Start curling.",
+                                                      "Good position. Here is how to do a bicep curl."]
         return out
 
     def _fix(self, key):
@@ -133,9 +134,15 @@ class Coach:
         if self.voice.say(f"{advice}.", TIP, ttl=3.0):
             self._pos_said.add(problem)
 
-    def on_position_ok(self):
-        self.voice.say("Good position. Start curling.", REJECT, ttl=4.0)
+    def on_position_ok(self, guide=False):
+        """The position check passed; with guide=True the curl guide (demo) is shown next."""
+        self.voice.say("Good position. Here is how to do a bicep curl." if guide else "Good position. Start curling.",
+                       REJECT, ttl=4.0)
         self._pos_key = None
+
+    def on_demo_done(self):
+        """The curl guide shown after the position check has finished: curls count from now."""
+        self.voice.say("Start curling.", REJECT, ttl=4.0)
 
     def on_position_reset(self):
         """Nobody there any more: the next attempt starts fresh."""

@@ -167,8 +167,11 @@ def main():
     fps, fps_t, fps_n = 0.0, time.time(), 0
     start_t = time.time()
     demo_allowed = not args.no_demo and not args.headless and config.DEMO_SECONDS > 0
-    demo_on = demo_allowed
+    # the curl guide (demo) is shown once the position check has passed - the person is then standing where they
+    # can see it and be seen; without the position check it is shown at start-up and for each next person
+    demo_on = demo_allowed and not config.POSITION_CHECK
     demo_pending = False
+    go_until = 0.0                              # 'Good position - start curling' banner shown until this time
     tracker = SessionTracker()
     snaps, session_tag = [], None
     saved_until, saved_summary, saved_plan = 0.0, None, None
@@ -301,8 +304,14 @@ def main():
             drift_key = None
             if gate and session_tag is None and logged_in and not demo_on:
                 if gate.update(pos, now):
-                    print("[POSITION] good - curls count from now")
-                    coach.on_position_ok()
+                    if demo_allowed:                        # position good: now show how to do a curl
+                        print("[POSITION] good - showing the curl guide")
+                        demo_on, start_t = True, now
+                        coach.on_position_ok(guide=True)
+                    else:
+                        print("[POSITION] good - curls count from now")
+                        go_until = now + 3.0
+                        coach.on_position_ok()
                 elif pos is not None and pos["problem"]:
                     coach.on_position(pos["problem"], pos["advice"])
             elif gate and session_tag is not None:
@@ -310,7 +319,8 @@ def main():
                 if drift_key:
                     coach.on_position_drift(drift_key, ADVICE[drift_key])
             positioned = gate is None or gate.passed or session_tag is not None
-            if events and not (logged_in and positioned):   # not logged in / not in position yet: not counted
+            # not logged in, not in position yet, or the curl guide is showing: curls are not counted or saved
+            if events and (demo_on or not (logged_in and positioned)):
                 feedback.reset()
                 calories.reset()
                 events = []
@@ -388,14 +398,16 @@ def main():
                 last_present = now
             if gate and not tracker.active and nobody_there(now, last_present):
                 gate.reset()                            # walked off before starting: the next person is checked again
-                coach.on_position_reset()
+                demo_on = False                         # (and the guide stops: it is shown after the check)
+                if nobody_there(now, last_present, config.POSITION_FORGET_SECONDS):
+                    coach.on_position_reset()           # really gone: instructions may be said again to the next one
             if tracker.update(now, present, bool(events) and present):
                 why = "nobody seen" if not present else "no curl"
                 print(f"[SESSION] ended ({why})")
                 saved_summary, saved_plan = end_session(tracker.last_activity or now)
                 snaps, session_tag, session_user = [], None, None
                 saved_until = now + config.SAVED_BANNER_SECONDS if saved_summary else 0.0   # nothing saved: no banner
-                demo_pending = demo_allowed
+                demo_pending = demo_allowed and gate is None    # with the position check: after it passes again
                 gpio.beep()
             if demo_pending and now >= saved_until and present:
                 demo_on, demo_pending, start_t = True, False, now     # next person: show the demo again
@@ -427,7 +439,7 @@ def main():
                     draw_qr_corner(image, qr, url, login_required)                  # not logged in yet
                 elif gate and not gate.passed and not tracker.active and not demo_on and logged_in:
                     draw_position(image, pos, gate.progress(now))                   # position check
-                if gate and gate.passed and session_tag is None and not demo_on and now - gate.passed_at < 3.0:
+                if session_tag is None and not demo_on and now < go_until:
                     draw_banner(image, "Good position - start curling", (0, 220, 0))
                 elif drift_key and not (now < saved_until):
                     draw_banner(image, ADVICE[drift_key], (0, 200, 255))
@@ -445,6 +457,9 @@ def main():
                         tracker.end()
                         snaps, session_tag = [], None
                         print("Demo finished - go!")
+                        if gate and gate.passed:          # guide shown after the position check: now start
+                            go_until = now + 3.0
+                            coach.on_demo_done()
                     else:
                         draw_demo(image, el, config.DEMO_SECONDS - el + 0.5)
                 cv2.imshow(window, fit_to_screen(image, screen) if screen else image)

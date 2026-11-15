@@ -546,6 +546,10 @@ def test_position_instructions_are_said_once_each():
     assert said(v) == "Keep both hands in view, arms down by your sides."
     c.on_position_drift("hands", "Keep both hands in view, arms down by your sides")
     assert said(v) is None                                       # once per session
+    c.on_position_ok(guide=True)                                 # the curl guide is shown next ...
+    assert said(v) == "Good position. Here is how to do a bicep curl."
+    c.on_demo_done()                                             # ... and when it ends, curls count
+    assert said(v) == "Start curling."
 
 
 if __name__ == "__main__":
