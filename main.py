@@ -313,7 +313,7 @@ def main():
             if events and session_tag is None:              # first curl of a new session
                 session_tag = time.strftime("%Y%m%d_%H%M%S")
                 session_user = logger.device_user()          # who tapped 'Train on this device' (or guest)
-                calories.weight_kg = logger.user_weight(session_user) if session_user else config.USER_WEIGHT_KG
+                calories.weight_kg = logger.user_weight(session_user) if session_user else args.weight   # guest: --weight
                 print(f"Session started for {session_user or 'guest'} ({calories.weight_kg:.0f} kg)")
             if tracker.active:
                 logger.keep_device_user()
