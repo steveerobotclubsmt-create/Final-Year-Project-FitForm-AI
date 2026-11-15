@@ -332,7 +332,10 @@ class BicepCurlCounter:
         hand_checks = config.FIST_CHECK or config.PALM_CHECK
         low = elbow > config.PALM_CHECK_ELBOW_MIN
         elbow_swinging = drift is not None and drift > config.UPPER_ARM_DRIFT_MAX
-        wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN
+        # not judged in the fully curled top position: the hand then overlaps the upper arm and shoulder in the
+        # picture and the 2D wrist angle reads 'bent' with a straight wrist (15 Nov: a top held 1.3 s at an elbow
+        # angle of 10-15 deg was rejected as 'wrist bent' - forearm not foreshortened, ratio 0.8-0.95)
+        wrist_bent = wrist is not None and wrist < config.WRIST_STRAIGHT_MIN and elbow >= config.UP_ANGLE
         hand_open = config.FIST_CHECK and hand in ("open", "partial")
         straight_part = elbow > config.PALM_DIR_ELBOW_MIN
         palm_away = config.PALM_CHECK and palm in PALM_BAD and straight_part

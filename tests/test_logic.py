@@ -185,6 +185,17 @@ def test_bent_wrist_rejected():
     assert c.last_reasons == ["wrist bent"]
 
 
+def test_wrist_not_judged_in_the_fully_curled_top():
+    """15 Nov: holding the top (elbow 10-15 deg) the hand overlaps the shoulder and the 2D wrist angle reads
+    'bent' with a straight wrist - only the lift and the lowering are judged."""
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(m(170), 0.0)
+    c.update(m(90), 0.5)
+    for k in range(5):                                # top held, wrist reading 'bent' every frame
+        event = c.update(m(15, wrist_ok=False), 1.0 + 0.3 * k)
+    assert c.count == 1 and "wrist bent" not in c.last_reasons, (event, c.last_reasons)
+
+
 def test_smoothing_ignores_single_glitch():
     c = BicepCurlCounter("right", alpha=0.6)
     for t in range(5):

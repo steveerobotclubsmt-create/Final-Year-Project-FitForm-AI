@@ -42,9 +42,11 @@ USE_3D_ANGLES = False        # False = 2D image angles (tested on the Pi 20 Oct:
 # ---- Rep quality ----
 READY_HOLD_SECONDS = 0.5     # before the first rep (or after the arm left the view) hold the arm straight this long
 ARM_LOST_RESET_SECONDS = 2.0 # arm out of view longer than this -> must show the ready position again
-MIN_UP_SECONDS = 0.4         # lifting (wrist leaves the bottom -> top) faster than this = "too fast".
+MIN_UP_SECONDS = 0.35        # lifting (wrist leaves the bottom -> top) faster than this = "too fast".
                              # Labelled clips 27 Oct (wrist-height timing): slow proper lifts 0.53-1.07 s,
-                             # fast swings 0.29-0.50 s
+                             # fast swings 0.29-0.50 s. Was 0.40: on 15 Nov a controlled curl (top held 2.8 s,
+                             # lowered in 0.6 s) measured 0.40 s at ~12 FPS (0.08 s per frame) and was rejected;
+                             # rushed lifts that day were 0.28-0.29 s
 MAX_UP_SECONDS = 5.0         # lifting slower than this = "too slow", rep not counted
 MIN_DOWN_SECONDS = 0.50      # lowering (wrist leaves the top -> back at the bottom) faster than this = "lowered
                              # too fast": the rep is judged when the arm is back down, not at the top.
