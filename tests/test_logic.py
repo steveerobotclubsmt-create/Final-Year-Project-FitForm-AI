@@ -893,7 +893,7 @@ def test_weight_warning_on_the_phone_page():
     from fitform.plan import make_plan
     s = {"reps_total": 10, "attempted_total": 10, "reps_right": 5, "reps_left": 5, "form_accuracy_pct": 100.0,
          "weight_flags_right": 3, "weight_flags_left": 2}
-    assert "5 reps" in make_plan(s)["weight_warning"]
+    assert "in 5 of your 10 curls." in make_plan(s)["weight_warning"]
     assert make_plan(dict(s, weight_flags_right=0, weight_flags_left=1))["weight_warning"] is None
 
 

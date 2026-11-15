@@ -68,9 +68,11 @@ class Crops(Dataset):
 
 def kind(g):
     c = g["clip"].rstrip("0123456789")
-    if c.startswith("bottle"):
-        holding_arm = "left" if c == "bottleL" else "right"
-        return "bottle" if g["arm"] == holding_arm else "empty (other hand)"
+    if c == "dumbbells":
+        return "dumbbell"
+    if c.startswith(("bottle", "dumbbell")):
+        holding_arm = "left" if c.endswith("L") else "right"
+        return c.rstrip("L") if g["arm"] == holding_arm else "empty (other hand)"
     return f"empty {c}"
 
 
@@ -112,6 +114,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=8)
     ap.add_argument("--all", action="store_true", help="final model: train on every picture, no test set "
                     "(report the accuracy from an earlier run with --test)")
+    ap.add_argument("--out", default=OUT, help="folder for the model and report (default models/ - the one the app "
+                    "uses; train a candidate elsewhere and compare it with tools/eval_hand_classifier.py first)")
     args = ap.parse_args()
     random.seed(0)
     torch.manual_seed(0)
@@ -166,13 +170,13 @@ def main():
             msg += f", test acc {100 * np.mean([a == b for a, (_, b, _) in zip(p, test)]):.1f} %"
         print(f"{msg}  ({time.time() - t0:.0f} s)", flush=True)
 
-    os.makedirs(OUT, exist_ok=True)
+    os.makedirs(args.out, exist_ok=True)
     text = how + "\n" + report(test, evaluate(model, test, test_tf)) if test else how
-    with open(os.path.join(OUT, "hand_holding_report.txt"), "w") as f:
+    with open(os.path.join(args.out, "hand_holding_report.txt"), "w") as f:
         f.write(text + "\n")
     print(text)
     model.eval()
-    onnx_path = os.path.join(OUT, "hand_holding.onnx")
+    onnx_path = os.path.join(args.out, "hand_holding.onnx")
     torch.onnx.export(model, torch.zeros(1, 3, SIZE, SIZE), onnx_path, input_names=["image"],
                       output_names=["logits"], opset_version=17, dynamo=False)
     print(f"saved {onnx_path} ({os.path.getsize(onnx_path) / 1e6:.1f} MB)")

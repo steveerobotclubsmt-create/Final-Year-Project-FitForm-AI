@@ -238,7 +238,8 @@ def main():
             sf = side.frame
             crop = cv2.hconcat([crop, cv2.resize(sf, (int(240 * sf.shape[1] / sf.shape[0]), 240))])
         os.makedirs(logger.snap_dir, exist_ok=True)
-        name = f"{session_tag}_{arm}_{kind}_{len(snaps) + 1}.jpg"
+        # the arm's curl number (every finished curl, counted or not), shown on the phone page as '3rd curl'
+        name = f"{session_tag}_{arm}_{kind}_c{feedback.counters[arm].attempted}.jpg"
         cv2.imwrite(os.path.join(logger.snap_dir, name), crop)
         snaps.append(name)
 

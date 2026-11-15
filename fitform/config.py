@@ -46,9 +46,11 @@ MIN_UP_SECONDS = 0.4         # lifting (wrist leaves the bottom -> top) faster t
                              # Labelled clips 27 Oct (wrist-height timing): slow proper lifts 0.53-1.07 s,
                              # fast swings 0.29-0.50 s
 MAX_UP_SECONDS = 5.0         # lifting slower than this = "too slow", rep not counted
-MIN_DOWN_SECONDS = 0.55      # lowering (wrist leaves the top -> back at the bottom) faster than this = "lowered
+MIN_DOWN_SECONDS = 0.50      # lowering (wrist leaves the top -> back at the bottom) faster than this = "lowered
                              # too fast": the rep is judged when the arm is back down, not at the top.
                              # 27 Oct clips: slow proper 0.63-1.49 s, swings 0.17-0.60 s, fast drops 0.30-0.48 s.
+                             # 15 Nov dumbbell test (webcam, ~12 FPS = 0.08 s per frame): good reps lowered in
+                             # 0.55-0.87 s and one in 0.54 s was rejected at 0.55 - lowered to 0.50 (user's choice)
                              # 0 = no lowering check (rep counted at the top)
 WRIST_MOVE_MARGIN = 0.2      # wrist this far (in shoulder widths) from its bottom / top level = it has left it
                              # (wrist height is used for the timing: from the front the forearm comes towards the

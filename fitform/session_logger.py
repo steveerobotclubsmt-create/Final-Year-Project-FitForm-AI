@@ -216,6 +216,7 @@ h1{font-size:22px;margin:4px 0}h2{font-size:17px;margin:0 0 10px}.muted{color:va
 ul{margin:6px 0 0 18px;padding:0}li{margin:4px 0}
 .warn{background:var(--warnbg);border-color:var(--warn)}.warn h2{color:var(--warn)}
 .snaps{display:grid;gap:8px;margin-top:10px}.snaps img{width:100%;border-radius:10px}
+figure{margin:0}figcaption{font-size:13px;color:var(--muted);margin-top:2px}
 .bar{height:12px;background:var(--line);border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--good)}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}td:first-child,th:first-child{text-align:left}
 input{width:100%;padding:11px;margin:6px 0 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-size:16px}
@@ -297,7 +298,8 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 </div>
 {% for kind, title, text in warnings %}
 <div class="card warn"><h2>{{ title }}</h2><p>{{ text }}</p>
-<div class="snaps">{% for f in s.snapshots if kind in f %}<img src="/snap/{{ f }}" alt="picture from the camera">{% endfor %}</div></div>
+<div class="snaps">{% for f in s.snapshots if kind in f %}<figure><img src="/snap/{{ f }}" alt="picture from the camera">
+<figcaption>{{ caption(f) }}</figcaption></figure>{% endfor %}</div></div>
 {% endfor %}
 
 <div class="card"><h2>History</h2><table><tr><th>Date</th><th>Reps</th><th>Form</th><th>kcal</th><th>Goal</th></tr>
@@ -327,10 +329,24 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 </main></body></html>"""
 
 
+SNAP_NAME = re.compile(r"_(right|left)_(?:palm|grip|weight)_(c?)(\d+)\.jpg$")
+
+
+def snap_caption(name):
+    """'..._right_weight_c3.jpg' -> 'Right arm - 3rd curl'. Pictures saved before 15 Nov end in a running picture
+    number instead of the curl number ('..._right_weight_2.jpg'), so they only name the arm."""
+    from .plan import ordinal
+    m = SNAP_NAME.search(name or "")
+    if not m:
+        return ""
+    arm, is_curl, n = m.groups()
+    return f"{arm.capitalize()} arm" + (f" - {ordinal(n)} curl" if is_curl else "")
+
+
 def create_app(logger, secret_key=None):
     from flask import (Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory,
                        session)
-    from .plan import SOURCES, WEEKLY_SESSIONS, goal_for, week_count
+    from .plan import SOURCES, WEEKLY_SESSIONS, goal_for, hand_warnings, week_count
 
     app = Flask(__name__)
     if secret_key is None:
@@ -360,18 +376,13 @@ def create_app(logger, secret_key=None):
         last = hist[-1] if hist else None
         plan = last.get("plan") if last else None
         g = (plan or {}).get("goal") or goal_for(0, weight)
-        warnings = []
-        if plan and plan.get("palm_warning"):
-            warnings.append(("palm", "Check your fist position", plan["palm_warning"]))
-        if plan and plan.get("grip_warning"):
-            warnings.append(("grip", "Check your grip", plan["grip_warning"]))
-        if plan and plan.get("weight_warning"):
-            warnings.append(("weight", "No weight in your hand?", plan["weight_warning"]))
+        # worked out from the session's numbers now (not the text saved with it), so older sessions read correctly
+        warnings = hand_warnings(last["summary"]) if last else []
         today = date.today()
         return render_template_string(DASH, style=STYLE, user=user, weight=weight, hist=hist[-12:], last=last,
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
                                       warnings=warnings, sources=SOURCES, device_user=logger.device_user(),
-                                      msg=request.args.get("msg"), today=today.isoformat(),
+                                      msg=request.args.get("msg"), today=today.isoformat(), caption=snap_caption,
                                       rep_from=(today - timedelta(days=29)).isoformat())
 
     @app.route("/login", methods=["POST"])

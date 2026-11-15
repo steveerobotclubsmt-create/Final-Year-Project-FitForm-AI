@@ -101,22 +101,50 @@ def make_plan(s, history=None, weight_kg=None):
         d_kcal = s.get("calories_kcal", 0) - float(prev.get("calories_kcal", 0) or 0)
         plan["progress"] = f"{'+' if d_reps >= 0 else ''}{d_reps} reps, {'+' if d_kcal >= 0 else ''}{d_kcal:.1f} kcal vs last session."
 
-    flags = s.get("palm_flags_right", 0) + s.get("palm_flags_left", 0)
-    if flags >= config.OUTWARD_WARN_MIN:
-        plan["palm_warning"] = (f"The cameras think your fist was turned outward in {flags} reps. This reading is not "
-                                "always accurate, so check the pictures. Keep your fist facing your body (parallel to "
-                                "it): curling with the fist turned out can strain the wrist and elbow.")
-    grips = s.get("grip_flags_right", 0) + s.get("grip_flags_left", 0)
-    if grips >= config.OUTWARD_WARN_MIN:
-        plan["grip_warning"] = (f"Your hand looked open in {grips} reps. With a bottle or dumbbell this can be a camera "
-                                "error - check the pictures. Hold the weight firmly in your fist.")
-    weights = s.get("weight_flags_right", 0) + s.get("weight_flags_left", 0)
-    if config.HOLD_CHECK and weights >= config.OUTWARD_WARN_MIN:
-        plan["weight_warning"] = (f"No weight was seen in your hand in {weights} reps. Curls without a weight do not "
-                                  "train the biceps much - hold a dumbbell or a water bottle. The camera can be "
-                                  "wrong (it has mostly learned from a water bottle so far), so check the pictures.")
+    for kind, _, text in hand_warnings(s):
+        plan[f"{kind}_warning"] = text
     plan["rest"] = "Rest your biceps about 48 hours; aim for at least 2 sessions a week."
     return plan
+
+
+def ordinal(n):
+    """1 -> '1st', 2 -> '2nd', 3 -> '3rd', 4 -> '4th', 11 -> '11th', 21 -> '21st'."""
+    n = int(n)
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def hand_warnings(s):
+    """The phone page's hand cards for session summary `s`: [(kind, title, text)]. The hand checks judge every
+    finished curl, counted or not, so the numbers are 'of your N curls' - not 'reps', which on the same page means
+    the counted ones (15 Nov: '26 reps' was shown for a session of 24 counted reps and 26 curls)."""
+    att = int(s.get("attempted_total", 0) or 0)
+    reps = int(s.get("reps_total", 0) or 0)
+
+    def of(n):
+        if not att:
+            return f"{n} curl{'' if n == 1 else 's'}"
+        return f"{n} of your {att} curls" + (f" ({reps} counted)" if reps != att else "")
+
+    out = []
+    flags = s.get("palm_flags_right", 0) + s.get("palm_flags_left", 0)
+    if flags >= config.OUTWARD_WARN_MIN:
+        out.append(("palm", "Check your fist position",
+                    f"The cameras think your fist was turned outward in {of(flags)}. This reading is not always "
+                    "accurate, so check the pictures. Keep your fist facing your body (parallel to it): curling with "
+                    "the fist turned out can strain the wrist and elbow."))
+    grips = s.get("grip_flags_right", 0) + s.get("grip_flags_left", 0)
+    if grips >= config.OUTWARD_WARN_MIN:
+        out.append(("grip", "Check your grip",
+                    f"Your hand looked open in {of(grips)}. With a bottle or dumbbell this can be a camera error - "
+                    "check the pictures. Hold the weight firmly in your fist."))
+    weights = s.get("weight_flags_right", 0) + s.get("weight_flags_left", 0)
+    if config.HOLD_CHECK and weights >= config.OUTWARD_WARN_MIN:
+        out.append(("weight", "No weight in your hand?",
+                    f"No weight was seen in your hand in {of(weights)}. Curls without a weight do not train the "
+                    "biceps much - hold a dumbbell or a water bottle. The camera can be wrong, so check the "
+                    "pictures."))
+    return out
 
 
 def week_count(history, now=None):

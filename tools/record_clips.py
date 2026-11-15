@@ -3,10 +3,15 @@ The Pi screen shows what to do and counts down, so nobody has to touch the keybo
   python tools/record_clips.py                        # the standard set: slow, fast swing, fast drop
   python tools/record_clips.py slow:40 swing:30       # choose clips and seconds yourself
   python tools/record_clips.py hands 1                # hand classifier: bottle right/left, fist, open (round 1)
-Files go to logs/clips/ (not uploaded to GitHub):  <label>_front.mp4, <label>_side.mp4, <label>_times.csv
-The front clip is saved as the camera sees it (not rotated): replay with
+  python tools/record_clips.py dumbbells 3            # hand classifier: dumbbells in both / right / left hand,
+                                                      # fist, open (round 3); 'dumbbells 4 20' = 20 s per clip
+Front camera: the AI Camera when connected, otherwise the USB webcam (then there is no side camera).
+Files go to logs/clips/ (not uploaded to GitHub):  <label>_front.mp4, <label>_side.mp4, <label>_times.csv and
+<label>_info.json (which camera filmed the front clip and how it is rotated - read by tools/hand_crops.py).
+The front clip is saved as the camera sees it (not rotated): replay an AI Camera clip with
   python main.py --video logs/clips/slow_front.mp4 --rotate 180 --side-camera logs/clips/slow_side.mp4"""
 
+import json
 import os
 import sys
 import time
@@ -28,9 +33,34 @@ INSTRUCTIONS = {
     "bottleL": "BOTTLE held FLAT like a dumbbell, in the LEFT hand. Normal curls; turn it a little now and then.",
     "fist": "EMPTY hands, CLENCHED fists. Normal curls, both arms.",
     "open": "EMPTY hands, OPEN or relaxed. Normal curls, both arms.",
+    "dumbbells": "A DUMBBELL in EACH hand. Normal curls, both arms; turn the wrists a little now and then.",
+    "dumbbell": "DUMBBELL in the RIGHT hand only, LEFT hand empty. Normal curls, both arms.",
+    "dumbbellL": "DUMBBELL in the LEFT hand only, RIGHT hand empty. Normal curls, both arms.",
 }
 DEFAULT = [("slow", 45), ("swing", 30), ("drop", 30)]
 HANDS = [("bottle", 40), ("bottleL", 40), ("fist", 40), ("open", 40)]   # python tools/record_clips.py hands [round]
+DUMBBELLS = [("dumbbells", 40), ("dumbbell", 40), ("dumbbellL", 40), ("fist", 40), ("open", 40)]
+
+
+class _Webcam:
+    """USB webcam read directly (one frame per read, like _RpicamCapture) at the app's capture settings."""
+
+    def __init__(self, index, width, height, fps):
+        self.cap = cv2.VideoCapture(index)
+        if getattr(config, "CAPTURE_MJPG", False):
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        self.cap.set(cv2.CAP_PROP_FPS, fps)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+    def isOpened(self):
+        return self.cap.isOpened()
+
+    def read(self):
+        return self.cap.read()
+
+    def release(self):
+        self.cap.release()
 GET_READY_S = 12
 FIRST_READY_S = 20          # more time before the first clip (walk from the Pi to your place)
 FPS = 30
@@ -51,20 +81,32 @@ def show(window, frame, lines, rotate):
 
 
 def main():
-    if sys.argv[1:2] == ["hands"]:                   # the hand-classifier set, e.g. 'hands 2' -> bottle2, fist2, ...
+    if sys.argv[1:2] in (["hands"], ["dumbbells"]):  # the hand-classifier sets, e.g. 'hands 2' -> bottle2, fist2, ...
         rnd = sys.argv[2] if len(sys.argv) > 2 else "1"
-        clips = [(f"{label}{rnd}", s) for label, s in HANDS]
+        sets = HANDS if sys.argv[1] == "hands" else DUMBBELLS
+        secs = int(sys.argv[3]) if len(sys.argv) > 3 else None
+        clips = [(f"{label}{rnd}", secs or s) for label, s in sets]
     else:
         clips = [(a.split(":")[0], int(a.split(":")[1]) if ":" in a else 30) for a in sys.argv[1:]] or DEFAULT
     out_dir = os.path.join(ROOT, config.LOG_DIR, "clips")
     os.makedirs(out_dir, exist_ok=True)
     front_src, side_src = detect()
-    if front_src != "picam":
-        print("ERROR: the AI camera (front) was not found")
+    if front_src is None:
+        print("ERROR: no camera found")
         return 1
-    front = _RpicamCapture(config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT, FPS)   # read directly: one frame per tick
+    if front_src == "picam":
+        front = _RpicamCapture(config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT, FPS)   # read directly: one frame per tick
+        rotate_deg = config.PICAM_ROTATE
+    else:                                            # no AI Camera: the USB webcam films from the front, no side
+        front = _Webcam(front_src, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT, FPS)
+        rotate_deg = config.WEBCAM_ROTATE
+        side_src = None
+    if not front.isOpened():
+        print(f"ERROR: could not open the front camera {front_src!r}")
+        return 1
     side = CameraStream(side_src, config.CAPTURE_WIDTH, config.CAPTURE_HEIGHT).start() if side_src is not None else None
-    rotate = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(config.PICAM_ROTATE)
+    rotate = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(rotate_deg)
+    info = {"front": "picam" if front_src == "picam" else "webcam", "rotate": rotate_deg}
     window = "FitForm - recording test clips"
     orange, white, red, green = (0, 200, 255), (235, 235, 235), (0, 0, 255), (0, 220, 0)
     try:
@@ -80,6 +122,8 @@ def main():
                 show(window, frame, [(f"Clip {n}/{len(clips)}: {label.upper()}", orange, 1.0), (what, white, 0.6),
                                      (f"Get in position - recording starts in {left:.0f} s", orange, 0.8)], rotate)
             base = os.path.join(out_dir, label)
+            with open(base + "_info.json", "w") as f:
+                json.dump(info, f)
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             wf = ws = None
             times = open(base + "_times.csv", "w")

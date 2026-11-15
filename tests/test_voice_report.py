@@ -429,6 +429,51 @@ def test_make_reports_tool_writes_one_pdf_per_active_account():
         assert "anna: no sessions" in out.stdout
 
 
+# ---------- phone page: hand cards and picture captions ----------
+def test_ordinals():
+    from fitform.plan import ordinal
+    assert [ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111, 112)] == \
+        ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "111th", "112th"]
+
+
+def test_hand_cards_count_curls_not_reps():
+    from fitform.plan import hand_warnings
+    # the 15 Nov dumbbell session: 24 reps counted out of 26 curls, every curl flagged 'no weight'
+    s = {"reps_total": 24, "attempted_total": 26, "weight_flags_right": 14, "weight_flags_left": 12,
+         "palm_flags_right": 14, "palm_flags_left": 2, "grip_flags_right": 2}
+    cards = {k: text for k, _, text in hand_warnings(s)}
+    assert "in 26 of your 26 curls (24 counted)." in cards["weight"]
+    assert "in 16 of your 26 curls (24 counted)." in cards["palm"]
+    assert "in 2 of your 26 curls (24 counted)." in cards["grip"]
+    assert "in 3 of your 3 curls." in hand_warnings({"reps_total": 3, "attempted_total": 3,
+                                                    "weight_flags_left": 3})[0][2]   # all counted: no '(counted)'
+    assert hand_warnings({"reps_total": 3, "attempted_total": 3, "weight_flags_left": 1}) == []   # below the minimum
+
+
+def test_picture_captions_name_the_arm_and_curl():
+    from fitform.session_logger import snap_caption
+    assert snap_caption("20261115_204150_right_weight_c3.jpg") == "Right arm - 3rd curl"
+    assert snap_caption("20261115_204150_left_palm_c21.jpg") == "Left arm - 21st curl"
+    assert snap_caption("20261115_204150_right_weight_2.jpg") == "Right arm"       # saved before 15 Nov
+    assert snap_caption("something.jpg") == ""
+
+
+def test_phone_page_shows_curl_counts_and_captions():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        r = rec(datetime(2026, 11, 15, 20, 43), right=12, left=12, attempted=26)
+        r["summary"].update(weight_flags_right=14, weight_flags_left=12,
+                            snapshots=["20261115_204150_right_weight_c2.jpg", "20261115_204150_left_weight_c11.jpg"])
+        r["plan"]["weight_warning"] = "No weight was seen in your hand in 26 reps."     # old text saved with it
+        log.save(r["summary"], r["plan"])
+        client = create_app(log, secret_key="test").test_client()
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        page = client.get("/").get_data(as_text=True)
+        assert "in 26 of your 26 curls (24 counted)" in page and "26 reps" not in page
+        assert "Right arm - 2nd curl" in page and "Left arm - 11th curl" in page
+
+
 # ---------- display: 'nobody there' screen and the drawn arm ----------
 def test_nobody_there_screen_waits_for_the_grace_time():
     from fitform.session import nobody_there
