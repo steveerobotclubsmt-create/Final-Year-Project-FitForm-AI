@@ -442,12 +442,22 @@ def test_hand_cards_count_curls_not_reps():
     s = {"reps_total": 24, "attempted_total": 26, "weight_flags_right": 14, "weight_flags_left": 12,
          "palm_flags_right": 14, "palm_flags_left": 2, "grip_flags_right": 2}
     cards = {k: text for k, _, text in hand_warnings(s)}
-    assert "in 26 of your 26 curls (24 counted)." in cards["weight"]
-    assert "in 16 of your 26 curls (24 counted)." in cards["palm"]
-    assert "in 2 of your 26 curls (24 counted)." in cards["grip"]
+    assert "in 26 of your 26 curls (24 counted + 2 not counted)." in cards["weight"]
+    assert "in 16 of your 26 curls (24 counted + 2 not counted)." in cards["palm"]
+    assert "in 2 of your 26 curls (24 counted + 2 not counted)." in cards["grip"]
     assert "in 3 of your 3 curls." in hand_warnings({"reps_total": 3, "attempted_total": 3,
                                                     "weight_flags_left": 3})[0][2]   # all counted: no '(counted)'
     assert hand_warnings({"reps_total": 3, "attempted_total": 3, "weight_flags_left": 1}) == []   # below the minimum
+
+
+def test_curls_line_adds_up():
+    from fitform.plan import curls_line
+    s = {"reps_total": 24, "attempted_total": 26, "reps_right": 12, "reps_left": 12, "attempted_right": 14,
+         "attempted_left": 12}
+    assert curls_line(s) == ("You made 26 curls: 24 counted + 2 not counted "
+                             "(right arm 12 of 14, left arm 12 of 12).")
+    assert curls_line({"reps_total": 5, "attempted_total": 6}) == "You made 6 curls: 5 counted + 1 not counted."
+    assert curls_line({"reps_total": 0, "attempted_total": 0}) is None
 
 
 def test_picture_captions_name_the_arm_and_curl():
@@ -470,7 +480,8 @@ def test_phone_page_shows_curl_counts_and_captions():
         client = create_app(log, secret_key="test").test_client()
         client.post("/login", data={"username": "steve", "password": "secret1"})
         page = client.get("/").get_data(as_text=True)
-        assert "in 26 of your 26 curls (24 counted)" in page and "26 reps" not in page
+        assert "in 26 of your 26 curls (24 counted + 2 not counted)" in page and "26 reps" not in page
+        assert "You made 26 curls: 24 counted + 2 not counted" in page
         assert "Right arm - 2nd curl" in page and "Left arm - 11th curl" in page
 
 

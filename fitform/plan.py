@@ -114,6 +114,20 @@ def ordinal(n):
     return f"{n}{suffix}"
 
 
+def curls_line(s):
+    """'You made 26 curls: 24 counted + 2 not counted (right arm 12 of 14, left arm 12 of 12).' - so the numbers
+    on the phone page visibly add up (a user does not remember every curl; the rejected ones are counted too)."""
+    att = int(s.get("attempted_total", 0) or 0)
+    reps = int(s.get("reps_total", 0) or 0)
+    if not att:
+        return None
+    text = f"You made {att} curl{'' if att == 1 else 's'}: {reps} counted + {att - reps} not counted"
+    ar, al = s.get("attempted_right"), s.get("attempted_left")
+    if ar is not None and al is not None:
+        text += (f" (right arm {s.get('reps_right', 0)} of {ar}, left arm {s.get('reps_left', 0)} of {al})")
+    return text + "."
+
+
 def hand_warnings(s):
     """The phone page's hand cards for session summary `s`: [(kind, title, text)]. The hand checks judge every
     finished curl, counted or not, so the numbers are 'of your N curls' - not 'reps', which on the same page means
@@ -124,7 +138,7 @@ def hand_warnings(s):
     def of(n):
         if not att:
             return f"{n} curl{'' if n == 1 else 's'}"
-        return f"{n} of your {att} curls" + (f" ({reps} counted)" if reps != att else "")
+        return f"{n} of your {att} curls" + (f" ({reps} counted + {att - reps} not counted)" if reps != att else "")
 
     out = []
     flags = s.get("palm_flags_right", 0) + s.get("palm_flags_left", 0)

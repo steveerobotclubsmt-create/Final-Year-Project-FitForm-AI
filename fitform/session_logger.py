@@ -292,6 +292,7 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div class="tile"><b>{{ s.reps_right }} / {{ s.reps_left }}</b><span>right / left</span></div>
 <div class="tile"><b>{{ '%.0f'|format(s.form_accuracy_pct) }}%</b><span>curls counted</span></div>
 <div class="tile"><b>{{ '%.1f'|format(s.avg_rep_speed_s) }} s</b><span>average lift</span></div></div>
+{% if curls %}<p style="margin:12px 0 0">{{ curls }}</p>{% endif %}
 {% if s.not_counted %}<p class="muted" style="margin:12px 0 0">Not counted:</p><ul>
 {% for why, n in s.not_counted.items() %}<li>{{ n }} &times; {{ why }}</li>{% endfor %}</ul>{% endif %}
 {% if last.plan and last.plan.progress %}<p class="muted">{{ last.plan.progress }}</p>{% endif %}
@@ -346,7 +347,7 @@ def snap_caption(name):
 def create_app(logger, secret_key=None):
     from flask import (Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory,
                        session)
-    from .plan import SOURCES, WEEKLY_SESSIONS, goal_for, hand_warnings, week_count
+    from .plan import SOURCES, WEEKLY_SESSIONS, curls_line, goal_for, hand_warnings, week_count
 
     app = Flask(__name__)
     if secret_key is None:
@@ -383,6 +384,7 @@ def create_app(logger, secret_key=None):
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
                                       warnings=warnings, sources=SOURCES, device_user=logger.device_user(),
                                       msg=request.args.get("msg"), today=today.isoformat(), caption=snap_caption,
+                                      curls=curls_line(last["summary"]) if last else None,
                                       rep_from=(today - timedelta(days=29)).isoformat())
 
     @app.route("/login", methods=["POST"])
