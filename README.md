@@ -25,7 +25,9 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 - Fist direction and grip (hand not clenched) are advisory (see Known limitations): the rep still counts, and the app shows a warning with pictures from the cameras when it happened in 2 or more reps
 - Green/red LED form indicator and buzzer (Raspberry Pi GPIO)
 - Calorie estimate: MET x body weight x active time (from the first to the last curl)
-- Session log: CSV (`logs/sessions.csv`) plus a detailed history (`logs/sessions.jsonl`)
+- Session log: CSV (`logs/sessions.csv`) plus a detailed history (`logs/sessions.jsonl`). A session in which no
+  rep was counted (only rejected curls: 0 reps, 0 kcal) is not saved and does not count anywhere - history,
+  goals, "this week" or reports; the voice says "No reps were counted, so this session was not saved."
 
 ## Project structure
 ```
@@ -220,7 +222,10 @@ length, and every session in a table.
   ```
   The PDFs go to `logs/reports/` (not uploaded to GitHub - they hold personal data).
 
-Making a report takes about 1 s on the Pi 5; during that second the camera loop slows to about 10 FPS.
+The phone page makes the report in a separate Python process at low priority (about 3 s on the Pi 5), so the
+camera loop keeps its speed. Made inside the app's own process it held Python's interpreter lock for about a
+second and the frame rate dipped to about 9-10 FPS (15 Nov); in its own process the lowest reading was 11.4 FPS,
+within the clip's normal 12-18 FPS range. `tools/make_reports.py` also runs on a laptop with a copy of `logs/`.
 
 ## Where the goals come from
 - Sets and reps: novices 1-3 sets of 8-12 reps; add 2-10 % load once 1-2 extra reps are possible on two

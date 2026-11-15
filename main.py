@@ -28,7 +28,7 @@ from fitform.pose_engine import PoseEngine
 from fitform.plan import make_plan
 from fitform.session import SessionTracker, curls_allowed
 from fitform.session_logger import SessionLogger, local_ip, start_server
-from fitform.session_summary import build_summary, print_summary
+from fitform.session_summary import build_summary, counts_as_session, print_summary
 from fitform.voice import Voice
 
 
@@ -181,12 +181,24 @@ def main():
         qr = None
 
     def end_session(end_time):
-        """Session over: summary + goal for next time, saved to the user's account; device logs out."""
+        """Session over: summary + goal for next time, saved to the user's account; device logs out.
+        Returns (summary, plan), or (None, None) when no rep was counted - that is not saved as a session."""
         summary = build_summary(feedback, calories, end_time, snapshots=snaps, user=session_user)
-        plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
-        print_summary(summary, plan)
-        logger.save(summary, plan)
-        coach.on_session_end(summary, plan)
+        if counts_as_session(summary):
+            plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
+            print_summary(summary, plan)
+            logger.save(summary, plan)
+            coach.on_session_end(summary, plan)
+        else:
+            summary = plan = None
+            print(f"[SESSION] no rep was counted ({sum(c.attempted for c in feedback.counters.values())} curls, "
+                  "none counted) - not saved as a session")
+            for name in snaps:                       # its hand pictures belong to no saved session
+                try:
+                    os.remove(os.path.join(logger.snap_dir, name))
+                except OSError:
+                    pass
+            coach.on_session_empty()
         logger.clear_device_user()
         coach.on_logout()
         feedback.reset()
@@ -342,10 +354,10 @@ def main():
                 landmarks.landmark[i].visibility for i in (11, 12)) / 2 >= config.PRESENCE_VISIBILITY
             if tracker.update(now, present, bool(events) and present):
                 why = "nobody seen" if not present else "no curl"
-                print(f"[SESSION] ended ({why}) - saving")
+                print(f"[SESSION] ended ({why})")
                 saved_summary, saved_plan = end_session(tracker.last_activity or now)
                 snaps, session_tag, session_user = [], None, None
-                saved_until = now + config.SAVED_BANNER_SECONDS
+                saved_until = now + config.SAVED_BANNER_SECONDS if saved_summary else 0.0   # nothing saved: no banner
                 demo_pending = demo_allowed
                 gpio.beep()
             if demo_pending and now >= saved_until and present:

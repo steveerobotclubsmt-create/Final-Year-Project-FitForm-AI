@@ -5,6 +5,12 @@ from datetime import datetime
 from .bicep_curl import REASON_TEXT
 
 
+def counts_as_session(summary):
+    """A session only counts (saved, in the history, goals and reports) if at least one rep was counted.
+    A 'session' of only rejected curls has 0 reps, 0 kcal and 0 s active time - nothing was done."""
+    return int((summary or {}).get("reps_total", 0) or 0) > 0
+
+
 def _avg(v):
     return round(sum(v) / len(v), 2) if v else 0.0
 

@@ -113,6 +113,10 @@ class Coach:
     def on_logout(self):
         self.greeted = None
 
+    def on_session_empty(self):
+        """The session ended without a counted rep, so it was not saved."""
+        self.voice.say("No reps were counted, so this session was not saved.", SESSION, ttl=SESSION_TTL)
+
     def on_session_end(self, summary, plan=None):
         reps = int(summary.get("reps_total", 0) or 0)
         kcal = float(summary.get("calories_kcal", 0) or 0)

@@ -390,6 +390,30 @@ def test_report_on_the_phone_page():
         assert make_report(log, "nobody", date(2026, 11, 1), date(2026, 11, 30)) is None
 
 
+def test_a_session_without_a_counted_rep_is_not_a_session():
+    from fitform.session_summary import counts_as_session
+    assert counts_as_session({"reps_total": 1}) and not counts_as_session({"reps_total": 0, "attempted_total": 3})
+    assert not counts_as_session(None)
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        empty = rec(datetime(2026, 11, 3, 9, 0), right=0, left=0, attempted=3, kcal=0.0, active=0.0)
+        log.save(empty["summary"], empty["plan"])          # saved by an older version
+        good = rec(datetime(2026, 11, 3, 10, 0))
+        log.save(good["summary"], good["plan"])
+        assert [h["summary"]["timestamp"] for h in log.history("steve")] == ["2026-11-03 10:00:00"]
+        client = create_app(log, secret_key="test").test_client()
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        assert len(client.get("/sessions").get_json()) == 1
+        assert client.get("/sessions.csv").get_data(as_text=True).count("steve") == 1
+        assert report_data("steve", log.history("steve"), date(2026, 11, 3), date(2026, 11, 3), 80)["totals"][
+            "sessions"] == 1
+    clock = Clock()
+    v = quiet_voice(clock)
+    Coach(v, clock=clock).on_session_empty()
+    assert said(v) == "No reps were counted, so this session was not saved."
+
+
 def test_make_reports_tool_writes_one_pdf_per_active_account():
     with tempfile.TemporaryDirectory() as tmp:
         log = SessionLogger(os.path.join(tmp, "logs"))

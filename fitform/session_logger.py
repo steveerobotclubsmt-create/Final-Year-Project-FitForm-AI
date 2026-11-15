@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import socket
+import subprocess
 import threading
 import time
 from datetime import date, timedelta
@@ -182,7 +183,9 @@ class SessionLogger:
             return list(csv.DictReader(f))
 
     def history(self, user=None):
-        """Detailed sessions, oldest first: [{'summary': {...}, 'plan': {...}}]; only `user`'s if given."""
+        """Detailed sessions, oldest first: [{'summary': {...}, 'plan': {...}}]; only `user`'s if given.
+        Sessions without a counted rep are left out (older versions saved them; they are not sessions)."""
+        from .session_summary import counts_as_session
         out = []
         if os.path.exists(self.jsonl):
             with open(self.jsonl, encoding="utf-8") as f:
@@ -190,6 +193,8 @@ class SessionLogger:
                     try:
                         rec = json.loads(line)
                     except ValueError:
+                        continue
+                    if not counts_as_session(rec.get("summary")):
                         continue
                     if user is None or (rec.get("summary") or {}).get("user") == user:
                         out.append(rec)
@@ -423,7 +428,7 @@ def create_app(logger, secret_key=None):
     @app.route("/report.pdf")
     def report_pdf():
         """My training report for a period: ?from=YYYY-MM-DD&to=YYYY-MM-DD, ?days=N (up to today) or ?all=1."""
-        from .report import make_report, period_records
+        from .report import make_report_in_process, period_records
         user = me()
         if not user:
             return redirect("/")
@@ -444,7 +449,11 @@ def create_app(logger, secret_key=None):
             return redirect("/?msg=The+start+date+must+be+before+the+end+date")
         if start.year < 2000 or (end - start).days > 3660:
             return redirect("/?msg=Choose+a+period+of+up+to+10+years")
-        pdf = make_report(logger, user, start, end, today=today)
+        try:
+            pdf = make_report_in_process(logger.dir, user, start, end, today=today)   # not in the camera's process
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            print(f"[REPORT] {e}")
+            return redirect("/?msg=Sorry,+the+report+could+not+be+made.+Please+try+again.")
         if pdf is None:
             return redirect(f"/?msg=No+sessions+between+{start.isoformat()}+and+{end.isoformat()}")
         name = f"fitform_report_{user}_{start.isoformat()}_{end.isoformat()}.pdf"

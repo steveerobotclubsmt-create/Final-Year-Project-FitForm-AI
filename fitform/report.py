@@ -8,11 +8,16 @@ Calories are the same estimate as everywhere else in FitForm: MET 3.5 x body wei
 (2024 Adult Compendium of Physical Activities, code 02054) - an estimate, not a measurement."""
 
 import io
+import os
+import subprocess
+import sys
+import tempfile
 from datetime import date, datetime, timedelta
 
 from . import config
 from .bicep_curl import FIX_TEXT, REASON_TEXT
 from .plan import GOOD_FORM, LADDER, OK_FORM, SOURCES, WEEKLY_SESSIONS
+from .session_summary import counts_as_session
 
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 _TEXT_TO_KEY = {v: k for k, v in REASON_TEXT.items()}
@@ -28,12 +33,11 @@ def _when(rec):
 
 def period_records(history, start, end):
     """Sessions (oldest first) whose timestamp falls on a day from `start` to `end` (dates, both included).
-    Sessions in which no curl was made are left out."""
+    Sessions without a counted rep are left out - they are not sessions."""
     out = []
     for rec in history:
         t = _when(rec)
-        s = rec.get("summary") or {}
-        if t is not None and start <= t.date() <= end and s.get("attempted_total"):
+        if t is not None and start <= t.date() <= end and counts_as_session(rec.get("summary")):
             out.append(rec)
     return sorted(out, key=_when)
 
@@ -425,3 +429,40 @@ def make_report(logger, user, start, end, today=None):
     """PDF bytes of `user`'s report from `start` to `end`, or None if they did not train then."""
     d = report_data(user, logger.history(user), start, end, logger.user_weight(user), today=today)
     return render_pdf(d) if d else None
+
+
+NO_SESSIONS = 3          # exit code of the report process when the user did not train in the period
+
+
+def make_report_in_process(log_dir, user, start, end, today=None, timeout=90):
+    """make_report() in its own Python process at low CPU priority. Drawing the PDF inside the app's process
+    would hold Python's interpreter lock for about a second and slow the camera loop (15 Nov: ~10 FPS while a
+    report was made); a separate process runs on a free core instead. Returns the PDF bytes or None."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    today = today or date.today()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "report.pdf")
+        r = subprocess.run([sys.executable, "-m", "fitform.report", os.path.abspath(log_dir), user,
+                            start.isoformat(), end.isoformat(), today.isoformat(), out],
+                           cwd=root, capture_output=True, timeout=timeout)
+        if r.returncode == NO_SESSIONS:
+            return None
+        if r.returncode != 0:
+            raise RuntimeError(f"report process failed: {r.stderr.decode(errors='ignore').strip()[-300:]}")
+        with open(out, "rb") as f:
+            return f.read()
+
+
+if __name__ == "__main__":       # python -m fitform.report <log dir> <user> <from> <to> <today> <out.pdf>
+    try:
+        os.nice(10)              # below the camera loop
+    except (AttributeError, OSError):
+        pass
+    from .session_logger import SessionLogger
+    _log_dir, _user, _a, _b, _today, _out = sys.argv[1:7]
+    _pdf = make_report(SessionLogger(_log_dir), _user, date.fromisoformat(_a), date.fromisoformat(_b),
+                       today=date.fromisoformat(_today))
+    if _pdf is None:
+        sys.exit(NO_SESSIONS)
+    with open(_out, "wb") as _f:
+        _f.write(_pdf)
