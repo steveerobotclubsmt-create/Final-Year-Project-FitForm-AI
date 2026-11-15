@@ -1,20 +1,36 @@
 Hand classifier 'holding a weight / empty hand' - MobileNetV3-Small (ImageNet), fine-tuned, 128x128 crops
-Data (27 Oct 2026, one person, one plastic bottle held flat; no dumbbell yet):
-  round 1: front + side camera (webcam at the side, ~30 deg)       4902 crops (3773 empty, 1129 holding)
-  round 2: front camera only (webcam was not at the side)           4654 crops (3524 empty, 1130 holding)
+Data (one person):
+  round 1 (27 Oct): AI Camera front + webcam side, plastic bottle held flat      4902 crops (3773 empty, 1129 holding)
+  round 2 (27 Oct): AI Camera front only, bottle                                 4654 crops (3524 empty, 1130 holding)
+  round 3 (15 Nov): USB webcam front, 0.5 kg dumbbells (both / right / left hand),
+                    empty fist, empty open hand - 40 s per clip                  5795 crops (3466 empty, 2329 holding)
+  round 4 (15 Nov): same as round 3, 20 s per clip, standing a little differently
+                    (test set only - never used for training)                    2900 crops (1720 empty, 1180 holding)
 
+=== Model in use since 15 Nov (models/hand_holding.onnx) ===
+Trained on rounds 1 + 2 + 3, 8 epochs (99.9 % train), tested on round 4 (new recording, never trained on):
+  per picture 98.1 % (2900): dumbbell 96.9 %, empty fist 100 %, empty open 100 %,
+                             empty hand while the other hand holds a dumbbell 93.5 % (right) / 100 % (left)
+  per rep vote as in FitForm: holding 97.9 % (234 votes), empty 99.1 % (342 votes)
+  bottle (rounds 1 + 2, also trained on - checks nothing was forgotten): 99.9 %, same as the old model
+Compared with the previous model on the same round-4 pictures (tools/eval_hand_classifier.py, OpenCV DNN):
+  previous: per picture 61.9 %, dumbbell 7.2 %, per rep 'holding' 3.8 % - nearly every dumbbell rep was
+            reported as 'no weight' (15 Nov live test: 26 of 26 curls)
+  new:      per picture 98.1 %, dumbbell 96.9 %, per rep 'holding' 97.9 %
+Speed: 6.4 ms (previous) vs 6.5 ms (new) per hand on the Pi 5 (throttled to 1.0 GHz) - the same network.
+Training: ~10.5 min per epoch on the Pi 5 CPU (~85 min for 8), Pi at 94 C without a fan.
+
+=== Previous model (27 Oct, bottle only) ===
 1) Trained on the first 75 % of every round-1 clip, tested on the last 25 % (same session):
    99.7 % (1438 pictures); front 99.8 %, side 99.2 %; empty never called 'holding', 5 bottles missed
-
-2) Trained on round 1, tested on round 2 (new session: other position / light) - the honest figure:
+2) Trained on round 1, tested on round 2 (new session: other position / light):
    front camera 98.5 % (4654 pictures); bottle 95.5 %, empty fist 99.5 %, empty open 97.3 %
    Errors: motion-blurred open hands, a yellow pole in the background read as the (yellow) bottle,
    some wrong labels (hands close together). Side camera of round 2 not valid (webcam not at the side).
+3) Final model: trained on every picture of rounds 1 + 2, 8 epochs, 99.9 % train.
 
-3) Final model (models/hand_holding.onnx): trained on every picture of rounds 1 + 2, 8 epochs, 99.9 % train.
-   In FitForm: front camera every 3rd frame, one vote per rep (>= 3 readings, >= 60 % 'empty' = no weight);
-   advice only (HOLD_REJECTS = False). Replay of round-2 clips: bottle reps 5/5-6/6 'holding',
-   empty open-hand reps 0/6-1/6.
+In FitForm: front camera every 3rd frame, one vote per rep (>= 3 readings, >= 60 % 'empty' = no weight);
+advice only (HOLD_REJECTS = False).
 
-Limits: one person, one bottle, one room; no dumbbell. Next: round 3 with a 3D-printed dumbbell and a
-different-coloured object as a new test set, ideally other people too.
+Limits: still one person, one room, one bottle and one pair of 0.5 kg dumbbells; the dumbbell rounds were
+filmed by the USB webcam, the bottle rounds by the AI Camera. Next: other people, other weights and rooms.

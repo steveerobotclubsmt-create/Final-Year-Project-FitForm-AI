@@ -73,6 +73,7 @@ fitform-ai/
 │   ├── fist_calibrate.py    # builds the fist-direction calibration from labelled runs
 │   ├── record_clips.py      # records labelled two-camera test clips (rep checks and CNN training data)
 │   ├── hand_crops.py        # cuts labelled hand pictures out of the clips for training
+│   ├── eval_hand_classifier.py   # compares hand-classifier models on the same test pictures
 │   ├── train_hand_classifier.py  # trains the CNN and writes models/ (PyTorch, runs in ~/cnn_env)
 │   ├── imx500_bottle_test.py     # test: can the AI Camera's on-chip object detector see a bottle?
 │   ├── setup_voice.py       # downloads the voice, prepares the spoken phrases, tests the speaker
@@ -167,16 +168,21 @@ FitForm checks whether there is actually a weight in the hand with a small image
 (pretrained on ImageNet, last layer replaced by 2 outputs "empty" / "holding", all layers fine-tuned) on a
 128x128 picture cut around each hand, just past the wrist along the forearm.
 
-How it was made (27 Oct 2026, data in `models/hand_holding_report.txt`):
-1. `tools/record_clips.py hands <round>` records labelled clips from both cameras: bottle in the right hand,
-   bottle in the left hand, empty fist, open hand.
+How it was made (data and all results in `models/hand_holding_report.txt`):
+1. `tools/record_clips.py hands <round>` (water bottle) or `dumbbells <round>` (dumbbells in both / the right /
+   the left hand) records labelled clips, plus empty fist and open hand. It uses the AI Camera when connected,
+   otherwise the USB webcam.
 2. `tools/hand_crops.py` uses MediaPipe Pose to find each wrist and saves the hand picture, labelled from the
-   clip name (round 1: 4902 pictures, round 2: 4654 pictures).
-3. `tools/train_hand_classifier.py` trains the model with PyTorch and exports `models/hand_holding.onnx`.
+   clip name (rounds 1-2, bottle, 27 Oct: 9556 pictures; rounds 3-4, 0.5 kg dumbbells, 15 Nov: 8695 pictures).
+3. `tools/train_hand_classifier.py` trains the model with PyTorch; `--out` puts a candidate in another folder.
+4. `tools/eval_hand_classifier.py` scores models on the same test pictures through OpenCV, as the app runs them;
+   a new model only replaces `models/hand_holding.onnx` if it is better.
 
-Results: trained on round 1 and tested on round 2 (a new session, other position and light), the front camera
-was right on **98.5 %** of 4654 pictures (bottle 95.5 %, empty fist 99.5 %, open hand 97.3 %). The final model
-is trained on both rounds.
+Results: the first model (bottle only) recognised a dumbbell in only **7 %** of pictures, so nearly every
+dumbbell rep was reported as "no weight" (live test 15 Nov). The model in use is trained on rounds 1-3 and
+tested on round 4, a separate recording it never saw: **98.1 %** of 2900 pictures, dumbbell **96.9 %**, empty
+hands 93.5-100 %; per rep, as the app decides, **97.9 %** of holding reps and **99.1 %** of empty-hand reps are
+right. On the bottle it is unchanged (99.9 %), and it is just as fast (6.5 ms vs 6.4 ms per hand).
 
 In FitForm the model runs through OpenCV's DNN module (about 5 ms per hand), so `fitform_env` does not need
 PyTorch. The hands are classified every 3rd frame and each rep gets one vote: with at least 3 readings and
@@ -286,10 +292,10 @@ within the clip's normal 12-18 FPS range. `tools/make_reports.py` also runs on a
   and sessions (it depends on small wrist rotations and on camera placement). It is therefore advisory only.
 - **Clenched fist vs. open hand** is judged from the hand landmarks, which flicker frame to frame, and a hand
   round a bottle or dumbbell can look open. It is therefore advisory as well.
-- **Weight in the hand (CNN)** is trained on one person, one plastic bottle and one room, with no dumbbell yet.
-  Mistakes seen: motion-blurred open hands, and a yellow pole in the background read as the (yellow) bottle.
-  It is therefore advisory only. Next step: a new test set with a 3D-printed dumbbell, a different-coloured
-  object and ideally other people.
+- **Weight in the hand (CNN)** is trained on one person, one plastic bottle, one pair of 0.5 kg dumbbells and
+  two rooms. Mistakes seen: motion-blurred open hands, a yellow pole in the background read as the (yellow)
+  bottle, and an empty hand next to a hand holding a dumbbell (93.5 % right). It is therefore advisory only.
+  Next step: other people, other weights and rooms.
 - Accounts are stored on each device; several devices sharing one account list would need a central server.
 - **Correct curls are counted reliably; wrong ones less so** - the arm checks (upper arm, elbow, tempo,
   extension) catch bad reps well, the hand checks less consistently.
