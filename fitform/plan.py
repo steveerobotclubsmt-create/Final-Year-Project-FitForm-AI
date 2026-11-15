@@ -1,13 +1,20 @@
 """Goal for the next session - rules taken from published guidelines, so the numbers have a source.
+Every rule below was checked against the source's own text on 16 Nov 2026 (quotes and pages in SOURCES).
 
-  Sets/reps : novices 1-3 sets of 8-12 reps per exercise; increase the load by 2-10 % once the current
-              load can be done for 1-2 reps more than planned on two consecutive sessions.
-              (Ratamess et al., ACSM position stand, Med Sci Sports Exerc 2009;41(3):687-708)
-  Rest      : 1-2 min between sets for assistance exercises such as curls (same source).
-  Frequency : muscle-strengthening activity on at least 2 days a week (WHO Guidelines on Physical
-              Activity and Sedentary Behaviour, 2020).
-  kcal      : MET 3.5 for 'resistance (weight) training, multiple exercises, 8-15 reps' (2024 Adult
-              Compendium of Physical Activities, code 02054); kcal = MET x body weight (kg) x hours.
+  Sets/reps : ACSM 2009, p. 691: "one to three sets per exercise be used by novice individuals initially";
+              p. 694: "8-12 repetitions per set for one to three sets per exercise" (novice and intermediate).
+              ACSM 2026 update: "healthy adults are advised to complete at least two sets per exercise".
+  Load      : ACSM 2009, p. 690: "2-10% (lower percent for small muscle mass exercises, higher percent increase
+              for large muscle mass exercises) increase in load be applied when the individual can perform the
+              current workload for one to two repetitions over the desired number on two consecutive training
+              sessions". FitForm moves up after reaching the 3x12 goal on two sessions in a row - an
+              adaptation of that rule - and suggests the lower end, as the biceps are a small muscle group.
+  Rest      : ACSM 2009, p. 692: "For assistance exercises (those exercises complimentary to core exercises),
+              a shorter rest period length of 1-2 min may suffice".
+  Frequency : WHO 2020, Table 4: "on 2 or more days a week".
+  kcal      : 2024 Adult Compendium, code 02054 = 3.5 MET. The paper defines 1 MET as "a standardized RMR of
+              3.5 mL/kg/min or approximately 1.0 kcal/kg/h", so kcal = MET x body weight (kg) x hours. It does
+              not print that formula itself, and it notes the values do "not reflect precise individual EE values".
 
 The goal climbs a ladder 3x8 -> 3x10 -> 3x12 reps per arm; after two sessions in a row at 3x12 with good
 form it advises a small weight increase and starts again at 3x8. General guidance, not coaching."""
@@ -16,6 +23,7 @@ from datetime import datetime, timedelta
 
 from . import config
 from .bicep_curl import FIX_TEXT
+from .equipment import label, next_load_advice
 
 LADDER = [(3, 8), (3, 10), (3, 12)]     # (sets, reps per set) per arm
 GOOD_FORM = 85.0                         # % of curls counted to move up
@@ -25,12 +33,26 @@ REST_S = 60.0                            # between sets (1-2 min recommended; lo
 WEEKLY_SESSIONS = 2                      # WHO 2020: at least 2 days a week
 
 SOURCES = [
-    "Ratamess et al. (2009) ACSM position stand: Progression models in resistance training for healthy "
-    "adults. Med Sci Sports Exerc 41(3):687-708 - sets, reps, rest, 2-10 % load increase.",
-    "World Health Organization (2020) Guidelines on physical activity and sedentary behaviour - "
-    "muscle-strengthening on at least 2 days a week.",
-    "Herrmann et al. (2024) Adult Compendium of Physical Activities, code 02054: resistance training "
-    "8-15 reps = 3.5 MET.",
+    "Sets, reps, rest and adding weight - American College of Sports Medicine (2009). Position stand: Progression "
+    "models in resistance training for healthy adults. Med Sci Sports Exerc 41(3):687-708, "
+    "doi:10.1249/MSS.0b013e3181915670. p. 691: \"one to three sets per exercise be used by novice individuals "
+    "initially\"; p. 694: \"8-12 repetitions per set for one to three sets per exercise\"; p. 692: \"For assistance "
+    "exercises ... a shorter rest period length of 1-2 min may suffice\"; p. 690: \"2-10% (lower percent for small "
+    "muscle mass exercises ...) increase in load be applied when the individual can perform the current workload "
+    "for one to two repetitions over the desired number on two consecutive training sessions\".",
+    "Update - Currier et al. (2026). ACSM position stand: Resistance training prescription for muscle function, "
+    "hypertrophy, and physical performance in healthy adults. Med Sci Sports Exerc 58(4):851-872, "
+    "doi:10.1249/MSS.0000000000003897: \"healthy adults are advised to complete at least two sets per exercise\", "
+    "\"at least twice weekly\"; and \"progression is not necessary to achieve beneficial outcomes\".",
+    "Training days - Bull et al. (2020). World Health Organization 2020 guidelines on physical activity and "
+    "sedentary behaviour. Br J Sports Med 54(24):1451-1462, doi:10.1136/bjsports-2020-102955. Table 4, adults: "
+    "\"muscle-strengthening activities at moderate or greater intensity that involve all major muscle groups on "
+    "2 or more days a week\".",
+    "Calories - Herrmann et al. (2024). 2024 Adult Compendium of Physical Activities. J Sport Health Sci "
+    "13(1):6-12, doi:10.1016/j.jshs.2023.10.010. Code 02054, 3.5 MET: \"Resistance (weight) training, multiple "
+    "exercises, 8-15 reps at varied resistance\". 1 MET = \"a standardized RMR of 3.5 mL/kg/min or approximately "
+    "1.0 kcal/kg/h\", so kcal = MET x body weight (kg) x hours (FitForm's working; the paper does not print this "
+    "formula). The paper notes the values do \"not reflect precise individual EE values\".",
 ]
 
 
@@ -59,8 +81,12 @@ def make_plan(s, history=None, weight_kg=None):
     step = current.get("step", 0)
     acc = s.get("form_accuracy_pct", 0.0)
     r, l = s.get("reps_right", 0), s.get("reps_left", 0)
+    eq = s.get("equipment")
+    keep = f"Keep the same weight ({label(eq)})." if eq and eq.get("kind") != "none" else "Keep the same weight."
     plan = {"focus": [], "notes": [], "progress": None, "palm_warning": None, "grip_warning": None,
-            "weight_warning": None, "this_goal": current, "met_goal": _met(s, current), "weight": "Keep the same weight."}
+            "weight_warning": None, "this_goal": current, "met_goal": _met(s, current), "weight": keep}
+    if eq and eq.get("kind") == "none":
+        plan["notes"].append(next_load_advice(eq))
 
     if plan["met_goal"]:
         if step < len(LADDER) - 1:
@@ -72,8 +98,7 @@ def make_plan(s, history=None, weight_kg=None):
             if prev_met:
                 step = 0
                 plan["headline"] = "Two strong sessions in a row - time for a heavier weight"
-                plan["weight"] = ("Increase the weight by 2-10 % (about 0.5-1 kg for a dumbbell curl) and start "
-                                  "again at 3 sets of 8.")
+                plan["weight"] = next_load_advice(s.get("equipment"))     # from the weight actually used
             else:
                 plan["headline"] = "Goal reached! Repeat it once more, then add weight"
     elif acc < OK_FORM and s.get("attempted_total", 0) >= 5:
@@ -153,7 +178,8 @@ def hand_warnings(s):
                     f"Your hand looked open in {of(grips)}. With a bottle or dumbbell this can be a camera error - "
                     "check the pictures. Hold the weight firmly in your fist."))
     weights = s.get("weight_flags_right", 0) + s.get("weight_flags_left", 0)
-    if config.HOLD_CHECK and weights >= config.OUTWARD_WARN_MIN:
+    no_weight_chosen = (s.get("equipment") or {}).get("kind") == "none"    # the user said so: nothing to warn
+    if config.HOLD_CHECK and weights >= config.OUTWARD_WARN_MIN and not no_weight_chosen:
         out.append(("weight", "No weight in your hand?",
                     f"No weight was seen in your hand in {of(weights)}. Curls without a weight do not train the "
                     "biceps much - hold a dumbbell or a water bottle. The camera can be wrong, so check the "

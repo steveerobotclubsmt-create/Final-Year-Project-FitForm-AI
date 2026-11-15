@@ -276,14 +276,38 @@ second and the frame rate dipped to about 9-10 FPS (15 Nov); in its own process 
 within the clip's normal 12-18 FPS range. `tools/make_reports.py` also runs on a laptop with a copy of `logs/`.
 
 ## Where the goals come from
-- Sets and reps: novices 1-3 sets of 8-12 reps; add 2-10 % load once 1-2 extra reps are possible on two
-  consecutive sessions; 1-2 min rest for assistance exercises - Ratamess et al., ACSM position stand,
-  *Med Sci Sports Exerc* 2009;41(3):687-708. The app uses a ladder 3x8 -> 3x10 -> 3x12 reps per arm (a step up
-  when the goal is reached with at least 85 % of curls counted), then a weight increase and back to 3x8.
-- At least 2 sessions a week: WHO Guidelines on Physical Activity and Sedentary Behaviour (2020).
-- Calories: MET 3.5, "resistance training, multiple exercises, 8-15 reps" (2024 Adult Compendium of Physical
-  Activities, code 02054); kcal = MET x body weight x hours. The kcal goal is the estimate for doing the
-  session's goal at about 3 s per rep with 60 s rests.
+Each rule was checked against the source's own text (16 Nov 2026); the quotes below are verbatim.
+
+| FitForm uses | Source says | Where |
+|---|---|---|
+| 3 sets per arm | "one to three sets per exercise be used by novice individuals initially" | ACSM 2009, p. 691 |
+| | "healthy adults are advised to complete at least two sets per exercise" | ACSM 2026 update |
+| 8 -> 10 -> 12 reps | "8–12 repetitions per set for one to three sets per exercise" (novice and intermediate) | ACSM 2009, p. 694 |
+| 1 min rest between sets | "For assistance exercises (those exercises complimentary to core exercises), a shorter rest period length of 1–2 min may suffice" | ACSM 2009, p. 692 |
+| Add 2-10 % weight (lower end for the biceps) | "2–10% (lower percent for small muscle mass exercises, higher percent increase for large muscle mass exercises) increase in load be applied when the individual can perform the current workload for one to two repetitions over the desired number on two consecutive training sessions" | ACSM 2009, p. 690 |
+| At least 2 training days a week | "muscle-strengthening activities at moderate or greater intensity that involve all major muscle groups on 2 or more days a week" | WHO 2020, Table 4 |
+| 3.5 MET | code 02054, 3.5 MET: "Resistance (weight) training, multiple exercises, 8-15 reps at varied resistance" | Compendium 2024 |
+| kcal = MET x body weight (kg) x hours | 1 MET = "a standardized RMR of 3.5 mL/kg/min or approximately 1.0 kcal/kg/h" | Compendium 2024 |
+
+Notes, so nothing is claimed that the sources do not say:
+- The step up the ladder (3x8 -> 3x10 -> 3x12, a step when the goal is reached with at least 85 % of curls
+  counted; a weight increase after 3x12 on two sessions in a row) is FitForm's adaptation of the 2009 rule.
+- The Compendium paper does not print the kcal formula; it follows from its MET definition above. The paper
+  itself notes the values do "not reflect precise individual EE values", so calories are an estimate.
+- The 2026 ACSM update also says "progression is not necessary to achieve beneficial outcomes": the ladder is
+  for people who want to keep progressing.
+- The kcal goal is the estimate for doing the session's goal at about 3 s per rep with 60 s rests.
+
+Sources:
+- American College of Sports Medicine (2009). Position stand: Progression models in resistance training for
+  healthy adults. *Med Sci Sports Exerc* 41(3):687-708. doi:10.1249/MSS.0b013e3181915670
+- Currier BS, et al. (2026). ACSM position stand: Resistance training prescription for muscle function,
+  hypertrophy, and physical performance in healthy adults: an overview of reviews. *Med Sci Sports Exerc*
+  58(4):851-872. doi:10.1249/MSS.0000000000003897
+- Bull FC, et al. (2020). World Health Organization 2020 guidelines on physical activity and sedentary
+  behaviour. *Br J Sports Med* 54(24):1451-1462. doi:10.1136/bjsports-2020-102955
+- Herrmann SD, et al. (2024). 2024 Adult Compendium of Physical Activities: a third update of the energy costs
+  of human activities. *J Sport Health Sci* 13(1):6-12. doi:10.1016/j.jshs.2023.10.010
 
 ## Known limitations
 - **Fist direction (turned outward vs. facing the body)** cannot be detected reliably. Tested with one camera,

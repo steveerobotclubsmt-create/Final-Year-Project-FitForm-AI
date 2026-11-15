@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 
 from . import config
 from .bicep_curl import FIX_TEXT, REASON_TEXT
+from .equipment import label as eq_label, short as eq_short
 from .plan import GOOD_FORM, LADDER, OK_FORM, SOURCES, WEEKLY_SESSIONS
 from .session_summary import counts_as_session
 
@@ -89,7 +90,8 @@ def report_data(user, history, start, end, weight_kg=None, today=None):
                          "accuracy": float(s.get("form_accuracy_pct", 0) or 0),
                          "active_s": float(s.get("duration_s", 0) or 0),
                          "kcal": float(s.get("calories_kcal", 0) or 0), "goal_kcal": gk,
-                         "goal": (pl.get("this_goal") or None), "met_goal": bool(pl.get("met_goal"))})
+                         "goal": (pl.get("this_goal") or None), "met_goal": bool(pl.get("met_goal")),
+                         "equipment": s.get("equipment")})
 
     # training days per calendar week (Monday-Sunday) that overlaps the period - WHO: at least 2 days a week
     weeks, day = [], start - timedelta(days=start.weekday())
@@ -126,6 +128,10 @@ def report_data(user, history, start, end, weight_kg=None, today=None):
         "reasons": sorted(reasons.items(), key=lambda kv: -kv[1]), "flags": flags,
         "weight_advice": next(((pl.get("weight") or "") for pl in reversed(plans) if pl.get("weight")), ""),
     }
+    # the weights used (asked on the phone since 16 Nov; older sessions have none recorded)
+    used = [x["equipment"] for x in sessions if x["equipment"]]
+    d["weights_used"] = list(dict.fromkeys(eq_label(e) for e in used))
+    d["first_load"], d["last_load"] = (used[0], used[-1]) if used else (None, None)
     d["advice"] = _advice(d)
     return d
 
@@ -155,7 +161,7 @@ def _advice(d):
         out.append(f"Only your {'right' if r else 'left'} arm was trained - train both arms.")
     if d["avg_lift_s"] is not None and d["avg_lift_s"] < 0.6:
         out.append("Slow down a little: about 1 second up and 2 seconds down.")
-    if d["weight_advice"] and "Increase" in d["weight_advice"]:
+    if d["weight_advice"] and "2-10 %" in d["weight_advice"]:
         out.append(d["weight_advice"])
     return out
 
@@ -327,7 +333,9 @@ def render_pdf(d):
               Paragraph(f"<b>{t['reps']}</b> curls counted out of {t['attempted']} made ({acc}) - right arm "
                         f"<b>{r}</b>, left arm <b>{l}</b>."
                         + (f" Average lift time {d['avg_lift_s']:.1f} s (about 1 s is ideal)."
-                           if d["avg_lift_s"] else ""), st["p"]),
+                           if d["avg_lift_s"] else "")
+                        + (f" Weight used: <b>{', '.join(d['weights_used'])}</b>." if d["weights_used"] else ""),
+                        st["p"]),
               Spacer(1, 4), chart("reps"), Spacer(1, 4), chart("form")]
 
     # ---- consistency
@@ -377,6 +385,9 @@ def render_pdf(d):
     prog = [Paragraph("Progress", st["h"])]
     if goal_line:
         prog.append(Paragraph(goal_line, st["p"]))
+    f0, f1 = d["first_load"], d["last_load"]
+    if f0 and f1 and f0 != f1:
+        prog.append(Paragraph(f"Weight: from <b>{eq_label(f0)}</b> to <b>{eq_label(f1)}</b>.", st["p"]))
     if p:
         ct = Table(cmp_rows, colWidths=[W * 0.31, W * 0.23, W * 0.23, W * 0.23])
         ct.setStyle(TableStyle([("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8.5),
@@ -390,12 +401,13 @@ def render_pdf(d):
     story += [KeepTogether(prog)]
 
     # ---- all sessions
-    rows = [["Date", "Reps R / L", "Counted", "Active", "kcal", "Goal kcal", "Goal"]]
+    rows = [["Date", "Reps R / L", "Weight", "Counted", "Active", "kcal", "Goal kcal", "Goal"]]
     for s in d["sessions"]:
         rows.append([s["when"].strftime("%a %d %b %H:%M"), f"{s['reps_right']} / {s['reps_left']}",
+                     eq_short(s["equipment"]),
                      f"{s['accuracy']:.0f} %", _fmt_time(s["active_s"]), f"{s['kcal']:.1f}",
                      f"{s['goal_kcal']:.1f}" if s["goal_kcal"] else "-", "Yes" if s["met_goal"] else "-"])
-    tb = Table(rows, colWidths=[W * x for x in (0.25, 0.14, 0.12, 0.12, 0.11, 0.14, 0.12)], repeatRows=1)
+    tb = Table(rows, colWidths=[W * x for x in (0.22, 0.12, 0.11, 0.11, 0.11, 0.1, 0.12, 0.11)], repeatRows=1)
     tb.setStyle(TableStyle([("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8), ("FONT", (0, 1), (-1, -1), "Helvetica", 8),
                             ("TEXTCOLOR", (0, 0), (-1, -1), ink), ("LINEBELOW", (0, 0), (-1, -1), 0.5, line),
                             ("ALIGN", (1, 0), (-1, -1), "CENTER")]))

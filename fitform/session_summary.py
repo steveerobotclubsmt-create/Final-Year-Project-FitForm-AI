@@ -15,8 +15,9 @@ def _avg(v):
     return round(sum(v) / len(v), 2) if v else 0.0
 
 
-def build_summary(feedback, calories, end_time, exercise="bicep_curl", snapshots=None, user=None):
-    """end_time: when the last curl finished (so standing around before walking away is not counted)."""
+def build_summary(feedback, calories, end_time, exercise="bicep_curl", snapshots=None, user=None, equipment=None):
+    """end_time: when the last curl finished (so standing around before walking away is not counted).
+    equipment: what the user said they lift (equipment.parse), or None if not asked (guest, --no-server)."""
     right, left = feedback.counters["right"], feedback.counters["left"]
     reps_total = right.count + left.count
     attempted = right.attempted + left.attempted
@@ -50,6 +51,8 @@ def build_summary(feedback, calories, end_time, exercise="bicep_curl", snapshots
         "snapshots": list(snapshots or []),
         "user": user or "guest",
         "weight_kg": calories.weight_kg,
+        "equipment": dict(equipment) if equipment else None,
+        "load_kg": (equipment or {}).get("load_kg"),
     }
 
 

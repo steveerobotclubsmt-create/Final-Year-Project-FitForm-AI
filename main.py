@@ -25,6 +25,7 @@ from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
+from fitform.equipment import label as eq_label
 from fitform.plan import make_plan
 from fitform.position import ADVICE, DriftWatch, PositionGate, check_position
 from fitform.session import SessionTracker, curls_allowed, nobody_there
@@ -187,6 +188,7 @@ def main():
         print("Log in on the phone and tap 'Train on this device' - curls are not counted before that")
 
     session_user = None
+    session_equipment = None                    # what the user said they lift (asked on the phone)
     qr = None
     try:
         qr = cv2.QRCodeEncoder.create().encode(url) if url.startswith("http") else None
@@ -196,7 +198,8 @@ def main():
     def end_session(end_time):
         """Session over: summary + goal for next time, saved to the user's account; device logs out.
         Returns (summary, plan), or (None, None) when no rep was counted - that is not saved as a session."""
-        summary = build_summary(feedback, calories, end_time, snapshots=snaps, user=session_user)
+        summary = build_summary(feedback, calories, end_time, snapshots=snaps, user=session_user,
+                                equipment=session_equipment)
         if counts_as_session(summary):
             plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
             print_summary(summary, plan)
@@ -365,8 +368,10 @@ def main():
             if events and session_tag is None:              # first curl of a new session
                 session_tag = time.strftime("%Y%m%d_%H%M%S")
                 session_user = logger.device_user()          # who tapped 'Train on this device' (or guest)
+                session_equipment = logger.device_equipment()
                 calories.weight_kg = logger.user_weight(session_user) if session_user else args.weight   # guest: --weight
-                print(f"Session started for {session_user or 'guest'} ({calories.weight_kg:.0f} kg)")
+                print(f"Session started for {session_user or 'guest'} ({calories.weight_kg:.0f} kg body weight, "
+                      f"lifting {eq_label(session_equipment)})")
             if tracker.active:
                 logger.keep_device_user()
             # spoken feedback - not during the start-up demo (curls then are not counted) or before logging in
@@ -434,7 +439,10 @@ def main():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
                 if now < saved_until and saved_summary is not None:
                     draw_saved(image, saved_summary, url, (saved_plan or {}).get("goal"))
-                elif not tracker.active and not demo_on and nobody_there(now, last_present):   # nobody in front
+                elif not tracker.active and not demo_on and (nobody_there(now, last_present) or
+                                                             (login_required and not logger.device_user())):
+                    # nobody in front - or nobody logged in yet: the big QR code stays up (easier to scan;
+                    # nothing starts before someone logs in anyway)
                     draw_idle(image, url, qr, logger.device_user(), login_required)
                 elif not tracker.active and not demo_on and qr is not None and not logger.device_user():
                     draw_qr_corner(image, qr, url, login_required)                  # not logged in yet

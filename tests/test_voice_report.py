@@ -485,6 +485,64 @@ def test_phone_page_shows_curl_counts_and_captions():
         assert "Right arm - 2nd curl" in page and "Left arm - 11th curl" in page
 
 
+# ---------- what the user lifts ----------
+def test_equipment_answers_and_advice():
+    from fitform.equipment import label, next_load_advice, parse, short
+    eq, err = parse("dumbbell", "0.5")
+    assert err is None and eq == {"kind": "dumbbell", "amount": 0.5, "unit": "kg", "load_kg": 0.5}
+    assert label(eq) == "0.5 kg dumbbells" and short(eq) == "0.5 kg"
+    w, _ = parse("bottle", "0,5")                                  # decimal comma from a phone keyboard
+    assert w["load_kg"] == 0.5 and label(w) == "0.5 L water bottles (about 0.5 kg)"
+    assert parse("none", "")[0]["load_kg"] == 0.0
+    assert parse("dumbbell", "0")[1] and parse("dumbbell", "abc")[1] and parse("bottle", "9")[1]
+    assert parse("anvil", "1")[1]
+    # ACSM 2009 p. 690: 2-10 %, lower end for small muscles
+    assert "from 0.5 kg to about 0.51-0.55 kg" in next_load_advice(eq)
+    assert "next size up" in next_load_advice(eq)
+    assert "from 0.5 L to about 0.51-0.55 L (about 10-50 ml more)" in next_load_advice(w)
+    assert "without a weight" in next_load_advice({"kind": "none"})
+    assert "Add 2-10 % weight" in next_load_advice(None)            # not recorded: general advice
+
+
+def test_weight_advice_and_no_weight_warning_use_the_answer():
+    from fitform.plan import goal_for, hand_warnings, make_plan
+    eq = {"kind": "dumbbell", "amount": 0.5, "unit": "kg", "load_kg": 0.5}
+    at12 = {"reps_right": 36, "reps_left": 36, "reps_total": 72, "attempted_total": 72, "form_accuracy_pct": 100.0,
+            "equipment": eq}
+    rec12 = {"summary": at12, "plan": {"goal": goal_for(2, 80)}}
+    first = make_plan(at12, [rec12], 80)
+    assert first["weight"] == "Keep the same weight (0.5 kg dumbbells)."
+    second = make_plan(at12, [rec12, {"summary": at12, "plan": first}], 80)
+    assert "from 0.5 kg to about 0.51-0.55 kg" in second["weight"]
+    s = {"reps_total": 5, "attempted_total": 5, "weight_flags_right": 3, "weight_flags_left": 2}
+    assert [k for k, _, _ in hand_warnings(s)] == ["weight"]
+    assert hand_warnings({**s, "equipment": {"kind": "none"}}) == []   # 'no weight' was chosen: no warning
+
+
+def test_phone_asks_what_will_be_lifted():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        client = create_app(log, secret_key="test").test_client()
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        assert 'href="/start"' in client.get("/").get_data(as_text=True)
+        page = client.get("/start").get_data(as_text=True)
+        assert "What will you lift?" in page and "Water bottles" in page and 'value="0.5"' in page
+        r = client.post("/start", data={"kind": "bottle", "amount": "9"})
+        assert r.status_code == 302 and "/start?msg=" in r.headers["Location"] and log.device_user() is None
+        client.post("/start", data={"kind": "bottle", "amount": "0.6"})
+        assert log.device_user() == "steve" and log.device_equipment()["amount"] == 0.6
+        assert 'value="bottle" checked' in client.get("/start").get_data(as_text=True)   # remembered
+        r = rec(datetime(2026, 11, 16, 10, 0))
+        r["summary"]["equipment"] = log.device_equipment()
+        log.save(r["summary"], r["plan"])
+        page = client.get("/").get_data(as_text=True)
+        assert "Weight: 0.6 L water bottles (about 0.6 kg)" in page and "<td>0.6 L</td>" in page
+        d = report_data("steve", log.history("steve"), date(2026, 11, 16), date(2026, 11, 16), 80)
+        assert d["weights_used"] == ["0.6 L water bottles (about 0.6 kg)"]
+        assert render_pdf(d)[:5] == b"%PDF-"
+
+
 # ---------- display: 'nobody there' screen and the drawn arm ----------
 def test_nobody_there_screen_waits_for_the_grace_time():
     from fitform.session import nobody_there

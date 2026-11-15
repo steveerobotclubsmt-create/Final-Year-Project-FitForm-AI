@@ -28,7 +28,7 @@ from . import config
 FIELDS = [
     "timestamp", "user", "exercise", "reps_right", "reps_left", "reps_total",
     "attempted_total", "form_accuracy_pct", "duration_s", "calories_kcal",
-    "avg_rep_speed_s",
+    "avg_rep_speed_s", "load_kg",
 ]
 USERNAME = re.compile(r"^[A-Za-z0-9_.-]{3,20}$")
 
@@ -54,7 +54,7 @@ class SessionLogger:
         self.users_path = os.path.join(self.dir, "users.json")
         self.snap_dir = os.path.join(self.dir, "snaps")
         self._lock = threading.Lock()
-        self._device_user, self._device_until = None, 0.0
+        self._device_user, self._device_until, self._device_equipment = None, 0.0, None
 
     # ---------- accounts ----------
     def _users(self):
@@ -121,15 +121,30 @@ class SessionLogger:
                 return True
         return False
 
+    def last_equipment(self, name):
+        """What this user said they lift last time (pre-fills the question on the phone), or None."""
+        return (self._users().get(name or "") or {}).get("equipment")
+
+    def set_last_equipment(self, name, equipment):
+        with self._lock:
+            users = self._users()
+            if name in users:
+                users[name]["equipment"] = equipment
+                self._write_users(users)
+
     # ---------- who is training on this device ----------
-    def set_device_user(self, name):
-        self._device_user = name
+    def set_device_user(self, name, equipment=None):
+        self._device_user, self._device_equipment = name, equipment
         self._device_until = time.time() + config.DEVICE_LOGIN_MINUTES * 60
 
     def device_user(self):
         if self._device_user and time.time() > self._device_until:
             self._device_user = None                  # nobody started within the time limit
         return self._device_user
+
+    def device_equipment(self):
+        """What the user on this device said they will lift (asked after 'Train on this device'), or None."""
+        return self._device_equipment if self.device_user() else None
 
     def keep_device_user(self):
         """A session is running: do not let the login time out in the middle of it."""
@@ -223,6 +238,8 @@ input{width:100%;padding:11px;margin:6px 0 10px;border:1px solid var(--line);bor
 button,.btn{display:inline-block;width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:16px;font-weight:600;text-align:center;text-decoration:none}
 .ghost{background:transparent;color:var(--accent);border:1px solid var(--line);width:auto;padding:8px 12px;font-size:14px}
 .ok{color:var(--good);font-weight:600}.err{color:#dc2626;font-weight:600}
+.choice{display:flex;gap:10px;align-items:center;padding:11px;border:1px solid var(--line);border-radius:10px;margin:6px 0}
+.choice input{width:auto;margin:0}
 svg text{fill:var(--muted);font-size:10px}a{color:var(--accent)}
 details summary{cursor:pointer;color:var(--muted);font-size:14px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -243,6 +260,26 @@ LOGIN = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <label>Body weight (kg) - used for the calorie estimate<input name="weight" type="number" step="0.5" min="30" max="250" value="70" required></label>
 <button>Create account</button></form></div></main></body></html>"""
 
+EQUIP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
+<body><main><h1>What will you lift?</h1>
+<p class="muted">So your report and your next goal use the weight you really train with.</p>
+{% if msg %}<p class="err">{{ msg }}</p>{% endif %}
+<form method="post" action="/start" class="card">
+{% for key, name in kinds %}<label class="choice"><input type="radio" name="kind" value="{{ key }}"{% if key == kind %} checked{% endif %} onchange="unit()"> {{ name }}</label>
+{% endfor %}
+<label id="amount_label">How heavy is each one? <span id="unit">({{ unit_text }})</span>
+<input name="amount" id="amount" type="number" step="0.05" min="0.1" max="50" value="{{ amount }}" inputmode="decimal"></label>
+<p class="muted" id="water_note">Water weighs about 1 kg per litre, so a 0.5 L bottle is about 0.5 kg.</p>
+<button>Start</button></form>
+<p><a href="/">Back</a></p>
+<script>
+function unit(){var k=document.querySelector('input[name=kind]:checked'); k=k?k.value:'';
+ document.getElementById('unit').textContent=k=='bottle'?'(litres of water in each bottle)':'(kg each)';
+ var none=k=='none'; document.getElementById('amount_label').style.display=none?'none':'';
+ document.getElementById('water_note').style.display=k=='bottle'?'':'none';}
+unit();</script></main></body></html>"""
+
 DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
 <body><main>
@@ -251,7 +288,7 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div class="card">
 {% if device_user == user %}<p class="ok">This device is ready for you - stand in front of the camera and start.</p>
 <p class="muted">Your session is saved to your account when you walk away.</p>
-{% else %}<form method="post" action="/start"><button>Train on this device</button></form>
+{% else %}<a class="btn" href="/start">Train on this device</a>
 {% if device_user %}<p class="muted">Someone else is about to train on this device.</p>{% endif %}{% endif %}
 </div>
 
@@ -293,6 +330,7 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div class="tile"><b>{{ '%.0f'|format(s.form_accuracy_pct) }}%</b><span>curls counted</span></div>
 <div class="tile"><b>{{ '%.1f'|format(s.avg_rep_speed_s) }} s</b><span>average lift</span></div></div>
 {% if curls %}<p style="margin:12px 0 0">{{ curls }}</p>{% endif %}
+{% if s.equipment %}<p class="muted" style="margin:4px 0 0">Weight: {{ eqlabel(s.equipment) }}</p>{% endif %}
 {% if s.not_counted %}<p class="muted" style="margin:12px 0 0">Not counted:</p><ul>
 {% for why, n in s.not_counted.items() %}<li>{{ n }} &times; {{ why }}</li>{% endfor %}</ul>{% endif %}
 {% if last.plan and last.plan.progress %}<p class="muted">{{ last.plan.progress }}</p>{% endif %}
@@ -303,8 +341,8 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <figcaption>{{ caption(f) }}</figcaption></figure>{% endfor %}</div></div>
 {% endfor %}
 
-<div class="card"><h2>History</h2><table><tr><th>Date</th><th>Reps</th><th>Form</th><th>kcal</th><th>Goal</th></tr>
-{% for h in hist|reverse %}<tr><td>{{ h.summary.timestamp[:16] }}</td><td>{{ h.summary.reps_total }}</td>
+<div class="card"><h2>History</h2><table><tr><th>Date</th><th>Reps</th><th>Weight</th><th>Form</th><th>kcal</th><th>Goal</th></tr>
+{% for h in hist|reverse %}<tr><td>{{ h.summary.timestamp[:16] }}</td><td>{{ h.summary.reps_total }}</td><td>{{ eqshort(h.summary.equipment) }}</td>
 <td>{{ '%.0f'|format(h.summary.form_accuracy_pct) }}%</td><td>{{ '%.1f'|format(h.summary.calories_kcal) }}</td>
 <td>{{ '&#10003;'|safe if h.plan and h.plan.met_goal else '-' }}</td></tr>{% endfor %}</table>
 <p class="muted"><a href="/sessions.csv">Download my sessions (CSV)</a></p></div>
@@ -347,6 +385,7 @@ def snap_caption(name):
 def create_app(logger, secret_key=None):
     from flask import (Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory,
                        session)
+    from .equipment import label as eq_label, short as eq_short
     from .plan import SOURCES, WEEKLY_SESSIONS, curls_line, goal_for, hand_warnings, week_count
 
     app = Flask(__name__)
@@ -384,7 +423,7 @@ def create_app(logger, secret_key=None):
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
                                       warnings=warnings, sources=SOURCES, device_user=logger.device_user(),
                                       msg=request.args.get("msg"), today=today.isoformat(), caption=snap_caption,
-                                      curls=curls_line(last["summary"]) if last else None,
+                                      curls=curls_line(last["summary"]) if last else None, eqlabel=eq_label, eqshort=eq_short,
                                       rep_from=(today - timedelta(days=29)).isoformat())
 
     @app.route("/login", methods=["POST"])
@@ -413,11 +452,28 @@ def create_app(logger, secret_key=None):
         session.pop("user", None)
         return redirect("/")
 
-    @app.route("/start", methods=["POST"])
+    @app.route("/start", methods=["GET", "POST"])
     def start():
+        """'Train on this device': first asks what the user will lift, then claims the device for them."""
+        from .equipment import KINDS, parse
         user = me()
-        if user:
-            logger.set_device_user(user)
+        if not user:
+            return redirect("/")
+        last = logger.last_equipment(user) or {"kind": "dumbbell", "amount": 0.5}
+        if request.method == "GET":
+            kind = last.get("kind", "dumbbell")
+            return render_template_string(EQUIP, style=STYLE, kinds=[(k, v[0]) for k, v in KINDS.items()],
+                                          kind=kind, amount=f"{last.get('amount') or 0.5:g}",
+                                          unit_text="litres of water in each bottle" if kind == "bottle" else "kg each",
+                                          msg=request.args.get("msg"))
+        if "kind" in request.form:
+            eq, err = parse(request.form.get("kind"), request.form.get("amount"))
+            if err:
+                return redirect("/start?msg=" + err.replace(" ", "+"))
+            logger.set_last_equipment(user, eq)
+        else:                                        # (older page without the question): last answer, if any
+            eq = logger.last_equipment(user)
+        logger.set_device_user(user, eq)
         return redirect("/")
 
     @app.route("/weight", methods=["POST"])
