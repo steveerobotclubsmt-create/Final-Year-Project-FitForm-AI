@@ -240,6 +240,47 @@ def draw_idle(image, url="", qr=None, user=None, login_required=False):
     return image
 
 
+def draw_position(image, result, progress=0.0):
+    """Position check before the first rep: what to do, a checklist, and a bar while a good position is held."""
+    h, w = image.shape[:2]
+    x0, y0, pw = int(w * 0.18), int(h * 0.22), int(w * 0.64)
+    rows = len(result["items"]) if result else 0
+    ph = 120 + 30 * rows
+    overlay = image.copy()
+    cv2.rectangle(overlay, (x0, y0), (x0 + pw, y0 + ph), (15, 15, 15), -1)
+    cv2.addWeighted(overlay, 0.8, image, 0.2, 0, image)
+    orange, green, white, red = (0, 200, 255), (0, 220, 0), (235, 235, 235), (60, 60, 230)
+    cv2.putText(image, "Position check", (x0 + 14, y0 + 30), FONT, 0.7, white, 2)
+    if result is None:
+        text, col = "Stand in front of the camera", orange
+    elif result["problem"]:
+        text, col = result["advice"], orange
+    else:
+        text, col = "Good - hold still...", green
+    (tw, _), _ = cv2.getTextSize(text, FONT, 0.75, 2)
+    fs = min(0.75, 0.75 * (pw - 28) / max(tw, 1))               # always fits the panel
+    cv2.putText(image, text, (x0 + 14, y0 + 66), FONT, fs, col, 2)
+    if result and not result["problem"]:
+        cv2.rectangle(image, (x0 + 14, y0 + 80), (x0 + pw - 14, y0 + 92), (70, 70, 70), -1)
+        cv2.rectangle(image, (x0 + 14, y0 + 80), (x0 + 14 + int((pw - 28) * progress), y0 + 92), green, -1)
+    for i, (label, ok) in enumerate(result["items"] if result else []):
+        y = y0 + 122 + 30 * i
+        cv2.circle(image, (x0 + 26, y - 6), 8, green if ok else red, -1)
+        cv2.putText(image, label, (x0 + 44, y), FONT, 0.6, white if ok else (170, 170, 170), 1)
+    return image
+
+
+def draw_banner(image, text, color, y=190):
+    """One line of text on a dark band across the middle of the picture (position messages)."""
+    h, w = image.shape[:2]
+    (tw, th), _ = cv2.getTextSize(text, FONT, 0.75, 2)
+    fs = min(0.75, 0.75 * (w - 40) / max(tw, 1))
+    (tw, th), _ = cv2.getTextSize(text, FONT, fs, 2)
+    cv2.rectangle(image, ((w - tw) // 2 - 10, y - th - 10), ((w + tw) // 2 + 10, y + 10), (15, 15, 15), -1)
+    cv2.putText(image, text, ((w - tw) // 2, y), FONT, fs, color, 2)
+    return image
+
+
 def fit_to_screen(image, screen):
     """Enlarges the picture to fill a full-screen window, keeping its shape (black bars at the sides or top).
     OpenCV's Qt window shows a full-screen picture at its own size in the middle, so this is done here."""

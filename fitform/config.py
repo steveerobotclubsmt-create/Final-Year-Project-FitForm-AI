@@ -152,6 +152,22 @@ BUZZER_BEEP_SECONDS = 0.1
 
 # ---- Session logging / Flask ----
 # ---- Sessions, summary and phone page ----
+# ---- Position check before the first rep (position.py; limits measured 15 Nov, see there) ----
+POSITION_CHECK = True        # curls only count once the position has been good; --no-position-check turns it off
+POSITION_HOLD_SECONDS = 1.0  # ... continuously this long
+POSITION_VISIBILITY = 0.5    # a body point must be seen at least this clearly
+POSITION_MIN_SHOULDER_WIDTH = 0.11  # shoulder width as a share of the picture width: below = too far away
+POSITION_MAX_SHOULDER_WIDTH = 0.29  # ... above = too close (good framing 0.19-0.22; too close 0.31-0.51)
+POSITION_CENTRE_MIN = 0.30   # middle of the shoulders, share of the picture width (good framing 0.41-0.64)
+POSITION_CENTRE_MAX = 0.70
+POSITION_MIN_FACING_RATIO = 0.45   # shoulder width / torso length (facing the camera 0.61-0.73; sideways smaller)
+POSITION_MIN_NOSE_Y = 0.04   # the nose at least this far below the top of the picture (room for the head)
+POSITION_NECK_MIN = 0.45     # nose height above the shoulders, in shoulder widths (real head 0.53-0.74) - a face
+POSITION_NECK_MAX = 0.95     # the model makes up when the head is cut off often falls outside this
+POSITION_NECK_TORSO_MIN = 0.33   # turned sideways: nose height in torso lengths instead (real head 0.38-0.52)
+POSITION_NECK_TORSO_MAX = 0.62
+POSITION_DRIFT_SECONDS = 2.0 # during a session: a position problem lasting this long is shown and said (once)
+
 PRESENCE_VISIBILITY = 0.5    # both shoulders must be seen at least this clearly to count as 'someone is there'
 IDLE_SCREEN_GRACE_SECONDS = 2.0  # the 'Hi <name>' / QR screen only after nobody has been seen this long (the pose
                              # model can lose someone who is still there for a moment - 15 Nov recording)

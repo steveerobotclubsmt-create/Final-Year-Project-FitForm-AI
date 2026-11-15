@@ -18,6 +18,10 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 - Personalised training report (PDF) for any period: calories burned, reps, form, training days, what to work on and progress, downloaded from the phone page or made for every active account with `tools/make_reports.py`. See "Training report" below
 - Start-up demo: an animated stick figure showing a correct curl and the key rules (fist facing the body)
 - No keyboard needed: the window opens full screen, and a session ends when you walk away (5 s) or stop curling (30 s)
+- Position check before the first rep: head, upper body and both hands in view, facing the camera, a sensible
+  distance and roughly in the middle - a checklist on screen and one spoken instruction at a time ("Step back so
+  your head is in view"). Curls only count once the position has been good for 1 s; during the session a
+  position problem lasting 2 s is shown and said once, but does not stop counting. See "Position check" below
 - Steady display: the drawn arm points are smoothed (One-Euro filter; the counting has its own smoothing), and the
   "Hi <name>" / QR screen only appears once nobody has been seen for 2 s, so a moment of lost tracking does not
   flip the screen
@@ -128,6 +132,7 @@ python main.py --no-demo --no-gpio --no-server --debug
 python main.py --windowed         # normal window instead of full screen
 python main.py --no-hold          # turn off the weight-in-hand CNN
 python main.py --no-voice         # no spoken feedback
+python main.py --no-position-check   # count curls without the position check first
 ```
 Cameras are found automatically: the Raspberry Pi AI Camera is the front camera when it is connected and a
 USB webcam becomes the side camera; without the AI Camera, the USB webcam is the front camera. At least one
@@ -183,6 +188,30 @@ python3 -m venv ~/cnn_env
 ~/cnn_env/bin/python tools/train_hand_classifier.py --train 1 --test 2
 ```
 
+## Position check
+Before the first rep of a session, FitForm checks that the person stands where the camera can judge their
+curls, using only the pose landmarks (`fitform/position.py`, limits in `fitform/config.py`, `POSITION_*`):
+
+| Check | Measured as | Instruction when it fails |
+|---|---|---|
+| Upper body in view | both hips seen, shoulders not too wide | "Step back so your whole upper body is in view" |
+| Head in view | nose and eyes seen, at a body-like height above the shoulders | "Step back so your head is in view" |
+| Both hands in view | elbows and wrists seen, wrists inside the picture | "Keep both hands in view, arms down by your sides" |
+| Facing the camera | shoulder width / torso length | "Turn to face the camera" |
+| Distance | shoulder width as a share of the picture | "Come a little closer" |
+| In the middle | middle of the shoulders | "Move a little to your left / right" |
+
+The screen shows the checklist and the first instruction; each instruction is spoken once. When everything has
+been good for 1 s: "Good position - start curling". Curls before that are not counted. During the session a
+problem that lasts 2 s is shown and said once, but counting goes on.
+
+The limits come from measurements (15 Nov): 5 recorded clips with good framing (1847 pictures) against a
+screen recording where the user stood too close with the head cut off - for example the shoulder width was
+0.19-0.22 of the picture in good framing and 0.31-0.51 too close, and the hips were seen in good framing but not
+when too close. On 8 good clips the check passed after exactly 1.0 s and the counted reps did not change
+(slow-curl clip: 11 with and without it); on the bad recordings it never passed. With the head cut off, the pose
+model sometimes invents a face, so "Head in view" alone can be fooled; the other checks and the 1 s hold catch it.
+
 ## Spoken feedback
 FitForm speaks through any speaker the Pi plays sound on (USB speaker, Bluetooth speaker or a monitor with
 speakers over HDMI - the Pi 5 has no headphone socket). The voice is [Piper](https://github.com/rhasspy/piper),
@@ -194,7 +223,8 @@ What is said - only feedback the system is reliable at:
 
 | When | Example |
 |---|---|
-| After logging in on the phone | "Hi Steve. Hold your arms straight to start." |
+| After logging in on the phone | "Hi Steve. Let's check your position." |
+| Position check (each instruction once) | "Step back so your head is in view." ... "Good position. Start curling." |
 | A rep is counted | "5" (or "Right, 5" while both arms are in use) |
 | A rep is not counted for an arm or tempo reason | "Not counted. Keep your elbow by your side." |
 | During the lift, an arm fault lasting 0.4 s | "Keep your upper arm pointing down" |

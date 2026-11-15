@@ -19,13 +19,14 @@ from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
 from fitform.coach import Coach
-from fitform.display_ui import ArmSmoother, draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, \
-    draw_saved, fit_to_screen
+from fitform.display_ui import ArmSmoother, draw_arm, draw_banner, draw_debug, draw_demo, draw_hud, draw_idle, \
+    draw_position, draw_qr_corner, draw_saved, fit_to_screen
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
 from fitform.plan import make_plan
+from fitform.position import ADVICE, DriftWatch, PositionGate, check_position
 from fitform.session import SessionTracker, curls_allowed, nobody_there
 from fitform.session_logger import SessionLogger, local_ip, start_server
 from fitform.session_summary import build_summary, counts_as_session, print_summary
@@ -48,6 +49,8 @@ def parse_args():
     p.add_argument("--no-palm", action="store_true", help="turn off the palm-direction check")
     p.add_argument("--no-hold", action="store_true", help="turn off the 'weight in the hand' check (CNN)")
     p.add_argument("--no-voice", action="store_true", help="turn off the spoken feedback")
+    p.add_argument("--no-position-check", action="store_true",
+                   help="count curls without checking the position first")
     p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
     p.add_argument("--debug-screen", action="store_true", help="also show the tuning numbers on the video window")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
@@ -105,6 +108,8 @@ def main():
         config.FIST_CHECK = False
     if args.no_palm:
         config.PALM_CHECK = False
+    if args.no_position_check:
+        config.POSITION_CHECK = False
     if args.angles:
         config.USE_3D_ANGLES = args.angles == "3d"
     print(f"Angles: {'3D' if config.USE_3D_ANGLES else '2D'} | straight above {config.DOWN_ANGLE} | "
@@ -169,6 +174,9 @@ def main():
     saved_until, saved_summary, saved_plan = 0.0, None, None
     last_present = None                         # last time someone was seen (for the 'nobody there' screen)
     arm_smoother = ArmSmoother() if config.DRAW_SMOOTH else None
+    gate = PositionGate() if config.POSITION_CHECK else None
+    drift = DriftWatch()
+    pos, drift_key = None, None
     url = f"http://{local_ip()}:{config.FLASK_PORT}" if (config.FLASK_ENABLED and not args.no_server) else logger.dir
     print(f"Phone page: {url}")
     login_required = config.REQUIRE_LOGIN and url.startswith("http") and not args.video
@@ -203,6 +211,9 @@ def main():
             coach.on_session_empty()
         logger.clear_device_user()
         coach.on_logout()
+        if gate:
+            gate.reset()
+            drift.reset()
         feedback.reset()
         calories.reset()
         tracker.end()
@@ -285,7 +296,21 @@ def main():
                                             side_palms={args.side_arm: side.label} if side else None,
                                             holds=holds)
             logged_in = curls_allowed(login_required, session_tag is not None, logger.device_user())
-            if events and not logged_in:            # nobody logged in yet: curls are not counted or saved
+            # position check: before the first rep the person must stand where the camera can judge their curls
+            pos = check_position(landmarks.landmark) if (gate and landmarks is not None) else None
+            drift_key = None
+            if gate and session_tag is None and logged_in and not demo_on:
+                if gate.update(pos, now):
+                    print("[POSITION] good - curls count from now")
+                    coach.on_position_ok()
+                elif pos is not None and pos["problem"]:
+                    coach.on_position(pos["problem"], pos["advice"])
+            elif gate and session_tag is not None:
+                drift_key = drift.update(pos, now)          # during a session: warn only, keep counting
+                if drift_key:
+                    coach.on_position_drift(drift_key, ADVICE[drift_key])
+            positioned = gate is None or gate.passed or session_tag is not None
+            if events and not (logged_in and positioned):   # not logged in / not in position yet: not counted
                 feedback.reset()
                 calories.reset()
                 events = []
@@ -359,6 +384,9 @@ def main():
             if landmarks is not None and max(landmarks.landmark[i].visibility for i in (11, 12)) >= \
                     config.PRESENCE_VISIBILITY:
                 last_present = now
+            if gate and not tracker.active and nobody_there(now, last_present):
+                gate.reset()                            # walked off before starting: the next person is checked again
+                coach.on_position_reset()
             if tracker.update(now, present, bool(events) and present):
                 why = "nobody seen" if not present else "no curl"
                 print(f"[SESSION] ended ({why})")
@@ -395,6 +423,12 @@ def main():
                     draw_idle(image, url, qr, logger.device_user(), login_required)
                 elif not tracker.active and not demo_on and qr is not None and not logger.device_user():
                     draw_qr_corner(image, qr, url, login_required)                  # not logged in yet
+                elif gate and not gate.passed and not tracker.active and not demo_on and logged_in:
+                    draw_position(image, pos, gate.progress(now))                   # position check
+                if gate and gate.passed and session_tag is None and not demo_on and now - gate.passed_at < 3.0:
+                    draw_banner(image, "Good position - start curling", (0, 220, 0))
+                elif drift_key and not (now < saved_until):
+                    draw_banner(image, ADVICE[drift_key], (0, 200, 255))
                 if tracker.active and not (now < saved_until):
                     left = tracker.countdown(now)       # only when nobody is seen or no curl for a while
                     if left is not None:

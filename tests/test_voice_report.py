@@ -285,7 +285,7 @@ def test_greeting_once_per_login_and_session_result_with_calories():
     v = quiet_voice(clock)
     c = Coach(v, clock=clock)
     c.on_login("steve_01")
-    assert said(v) == "Hi steve 01. Hold your arms straight to start."
+    assert said(v) == "Hi steve 01. Let's check your position."
     c.on_login("steve_01")
     assert said(v) is None
     c.on_session_end({"reps_total": 24, "calories_kcal": 6.4},
@@ -456,6 +456,96 @@ def test_drawn_arm_is_steady_when_still_and_follows_fast_moves():
     assert abs(out[0] - 1000) < 15, out                         # close behind, not lagging far
     out = sm.update({"right": {"wrist": [100, 100]}}, t + 2.0)["right"]["wrist"]
     assert out == [100, 100]                                    # arm was gone: starts fresh, no slide
+
+
+# ---------- position check before the first rep ----------
+def body(**change):
+    """Landmarks of a person standing well: facing the camera, centred, about 2.5 m away, arms down."""
+    pts = {i: [0.5, 0.5, 0.0] for i in range(33)}             # x, y, visibility (unused points unseen)
+    good = {0: (0.48, 0.12), 2: (0.47, 0.10), 5: (0.50, 0.10), 11: (0.585, 0.30), 12: (0.375, 0.30),
+            13: (0.62, 0.48), 14: (0.34, 0.48), 15: (0.63, 0.66), 16: (0.33, 0.66), 23: (0.56, 0.68),
+            24: (0.40, 0.68)}
+    for i, (x, y) in good.items():
+        pts[i] = [x, y, 0.99]
+    for i, val in change.items():
+        pts[int(i[1:])] = val
+    return [SimpleNamespace(x=x, y=y, visibility=v) for x, y, v in (pts[i] for i in range(33))]
+
+
+def test_position_check_good_and_each_problem():
+    from fitform.position import check_position
+    r = check_position(body())
+    assert r["problem"] is None and all(ok for _, ok in r["items"])
+    assert check_position(None) is None
+    # standing too close: hips out of the picture, shoulders wide (as in the 15 Nov recording)
+    assert check_position(body(p23=[0.62, 1.08, 0.1], p24=[0.32, 1.08, 0.1]))["problem"] == "too_close"
+    assert check_position(body(p11=[0.70, 0.30, 0.99], p12=[0.30, 0.30, 0.99]))["problem"] == "too_close"
+    assert check_position(body(p0=[0.48, 0.12, 0.2], p2=[0.47, 0.1, 0.2]))["problem"] == "head"
+    assert check_position(body(p15=[0.63, 1.02, 0.4]))["problem"] == "hands"              # hand below the picture
+    far = {f"p{i}": [0.5 + 0.45 * (x - 0.5), 0.45 + 0.45 * (y - 0.45), 0.99] for i, (x, y) in   # half the size
+           {0: (0.48, 0.12), 2: (0.47, 0.10), 5: (0.50, 0.10), 11: (0.585, 0.30), 12: (0.375, 0.30),
+            13: (0.62, 0.48), 14: (0.34, 0.48), 15: (0.63, 0.66), 16: (0.33, 0.66), 23: (0.56, 0.68),
+            24: (0.40, 0.68)}.items()}
+    assert check_position(body(**far))["problem"] == "too_far"
+    shift = lambda dx: {f"p{i}": [x + dx, y, 0.99] for i, (x, y) in
+                        {0: (0.48, 0.12), 2: (0.47, 0.10), 5: (0.50, 0.10), 11: (0.585, 0.30), 12: (0.375, 0.30),
+                         13: (0.62, 0.48), 14: (0.34, 0.48), 15: (0.63, 0.66), 16: (0.33, 0.66),
+                         23: (0.56, 0.68), 24: (0.40, 0.68)}.items()}
+    # picture's left = the person's own right side: they must move to their left
+    assert check_position(body(**shift(-0.25)))["problem"] == "left"
+    assert check_position(body(**shift(+0.25)))["problem"] == "right"
+    # turned sideways: shoulders look narrow compared with the torso, at a normal distance
+    assert check_position(body(p11=[0.555, 0.30, 0.99], p12=[0.43, 0.30, 0.99]))["problem"] == "turned"
+
+
+def test_position_gate_needs_a_steady_good_position():
+    from fitform.position import PositionGate, check_position
+    good, bad = check_position(body()), check_position(body(p23=[0.62, 1.08, 0.1]))
+    g = PositionGate(hold=1.0)
+    assert not g.update(good, 0.0) and not g.update(good, 0.6)
+    assert not g.update(bad, 0.8)                                # a bad picture starts the hold again
+    assert not g.update(good, 1.0) and not g.update(good, 1.9)
+    assert g.update(good, 2.0) and g.passed                      # 1 s of good position in a row
+    assert not g.update(bad, 2.5) and g.passed                   # stays passed until reset
+    g.reset()
+    assert not g.passed and g.progress(3.0) == 0.0
+
+
+def test_position_drift_warns_only_after_it_lasts():
+    from fitform.position import DriftWatch, check_position
+    d, bad = DriftWatch(hold=2.0), check_position(body(p15=[0.63, 1.02, 0.4]))
+    assert d.update(bad, 0.0) is None and d.update(bad, 1.5) is None
+    assert d.update(bad, 2.0) == "hands"
+    assert d.update(check_position(body()), 2.1) is None
+
+
+def test_position_instructions_are_said_once_each():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_position("too_close", "Step back so your whole upper body is in view")
+    assert said(v) is None                                       # just appeared: could be a blip
+    clock.t += 1.1
+    c.on_position("too_close", "Step back so your whole upper body is in view")
+    assert said(v) == "Step back so your whole upper body is in view."
+    clock.t += 5
+    c.on_position("too_close", "Step back so your whole upper body is in view")
+    assert said(v) is None                                       # not repeated
+    c.on_position("left", "Move a little to your left")
+    clock.t += 1.1
+    c.on_position("left", "Move a little to your left")
+    assert said(v) == "Move a little to your left."
+    c.on_position_ok()
+    assert said(v) == "Good position. Start curling."
+    c.on_position_reset()                                        # walked away: the next attempt starts fresh
+    c.on_position("left", "Move a little to your left")
+    clock.t += 1.1
+    c.on_position("left", "Move a little to your left")
+    assert said(v) == "Move a little to your left."
+    c.on_position_drift("hands", "Keep both hands in view, arms down by your sides")
+    assert said(v) == "Keep both hands in view, arms down by your sides."
+    c.on_position_drift("hands", "Keep both hands in view, arms down by your sides")
+    assert said(v) is None                                       # once per session
 
 
 if __name__ == "__main__":

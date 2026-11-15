@@ -25,6 +25,7 @@ SPOKEN_REASONS = ("arm_tilt", "arm_forward", "elbow", "fast", "slow", "drop", "n
 LIVE_WARNINGS = (("arm_tilted", "arm_tilt"), ("arm_forward", "arm_forward"), ("elbow_swinging", "elbow"))
 BOTH_ARMS_SECONDS = 20.0     # the other arm finished a curl this recently = both arms in use: name the arm
 COUNT_TTL, TIP_TTL, REJECT_TTL, SESSION_TTL = 1.5, 1.0, 4.0, 20.0
+POSITION_SAY_AFTER = 1.0     # a position instruction is said once it has been the main problem this long
 
 
 def _spoken_name(name):
@@ -39,6 +40,8 @@ class Coach:
         self.greeted = None
         self._live_since = {}                       # (arm, reason) -> when the live fault started
         self._last_event = {"right": -1e9, "left": -1e9}
+        self._pos_said, self._pos_key, self._pos_since = set(), None, None   # position check before the start
+        self._drift_said = set()                    # position warnings said in this session
 
     def phrases(self):
         """Fixed sentences, made in the background at start-up so they are said without delay."""
@@ -48,6 +51,8 @@ class Coach:
             out += [f"{arm}. Not counted."] + [f"{arm}. Not counted. {FIX_TEXT[k]}." for k in SPOKEN_REASONS]
         for n in range(1, 31):
             out += [str(n), f"Right, {n}", f"Left, {n}"]
+        from .position import ADVICE
+        out += [f"{a}." for a in ADVICE.values()] + ["Good position. Start curling."]
         return out
 
     def _fix(self, key):
@@ -108,10 +113,40 @@ class Coach:
         if not name or name == self.greeted:
             return
         self.greeted = name
-        self.voice.say(f"Hi {_spoken_name(name)}. Hold your arms straight to start.", SESSION, ttl=SESSION_TTL)
+        then = "Let's check your position." if config.POSITION_CHECK else "Hold your arms straight to start."
+        self.voice.say(f"Hi {_spoken_name(name)}. {then}", SESSION, ttl=SESSION_TTL)
 
     def on_logout(self):
         self.greeted = None
+        self._drift_said = set()
+
+    # ---------- position check (position.py): geometry of the whole body, reliable enough to speak ----------
+    def on_position(self, problem, advice):
+        """Before the first rep: say each instruction once, after it has been the main problem for
+        POSITION_SAY_AFTER seconds (a problem that flickers for a frame is never said)."""
+        now = self.clock()
+        if problem != self._pos_key:
+            self._pos_key, self._pos_since = problem, now
+            return
+        if problem in self._pos_said or now - self._pos_since < POSITION_SAY_AFTER:
+            return
+        if self.voice.say(f"{advice}.", TIP, ttl=3.0):
+            self._pos_said.add(problem)
+
+    def on_position_ok(self):
+        self.voice.say("Good position. Start curling.", REJECT, ttl=4.0)
+        self._pos_key = None
+
+    def on_position_reset(self):
+        """Nobody there any more: the next attempt starts fresh."""
+        self._pos_said, self._pos_key, self._pos_since = set(), None, None
+
+    def on_position_drift(self, problem, advice):
+        """During a session (curls still count): each instruction at most once per session."""
+        if problem in self._drift_said:
+            return
+        if self.voice.say(f"{advice}.", TIP, ttl=3.0):
+            self._drift_said.add(problem)
 
     def on_session_empty(self):
         """The session ended without a counted rep, so it was not saved."""
