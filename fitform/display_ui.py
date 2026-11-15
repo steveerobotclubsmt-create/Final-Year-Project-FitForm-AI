@@ -63,7 +63,7 @@ def draw_arm(image, pts, counter, show_angle=False):
         cv2.circle(image, tuple(pts[joint]), 10, color, -1)
     cv2.line(image, tuple(pts["shoulder"]), tuple(pts["elbow"]), WHITE, 3)
     cv2.line(image, tuple(pts["elbow"]), tuple(pts["wrist"]), WHITE, 3)
-    if counter.last and show_angle:
+    if show_angle and counter.last.get("elbow_angle") is not None:
         ex, ey = pts["elbow"]
         cv2.putText(image, f"{counter.last['elbow_angle']:.0f}", (ex + 10, ey), FONT, 0.7, (255, 255, 0), 2)
 

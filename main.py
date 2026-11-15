@@ -319,6 +319,8 @@ def main():
                 print(f"FPS {fps:.1f}")
                 for arm in drawn:
                     c = feedback.counters[arm]; d = c.last
+                    if not d:                # counter was just reset (curl before login / position check): nothing yet
+                        continue
                     fmt = lambda v: "-" if v is None else f"{v:.0f}"
                     ps = hands.palm_scores.get(arm) if hands else None
                     lr = d.get('len_ratio')
