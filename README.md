@@ -28,7 +28,9 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
   "Hi <name>" / QR screen only appears once nobody has been seen for 2 s, so a moment of lost tracking does not
   flip the screen
 - Camera watchdog: if the Pi camera sends no picture for 3 s (seen when the Pi was hot and throttled), it is restarted by itself
-- Accounts on the phone app (username + password, body weight). The device screen shows a QR code: scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Curls only count after logging in (`REQUIRE_LOGIN` in `fitform/config.py`; not needed with `--no-server` or `--video`). A forgotten password can be reset on the device with `tools/reset_password.py`
+- Accounts on the phone app (username + password, email, body weight). Until someone logs in, the device shows a big QR code (also with a person in view - nothing starts before a login anyway): scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Curls only count after logging in (`REQUIRE_LOGIN` in `fitform/config.py`; not needed with `--no-server` or `--video`)
+- "What will you lift?" after **Train on this device**: dumbbells (kg each), water bottles (litres each; water is about 1 kg per litre), something else (kg each) or no weight - pre-filled with the last answer. The weight is saved with the session and shown on the phone page, in the history and in the report, and the advice to add weight uses it: 2-10 %, the lower end for the biceps (ACSM 2009, p. 690), e.g. "from 0.5 kg to about 0.51-0.55 kg". Choosing "no weight" also stops the "No weight in your hand?" card. Calories are not changed by it: they come from MET x body weight x time (see "Where the goals come from")
+- Forgot password: the phone page emails a 6-digit code (valid 10 minutes, 5 tries, at most one a minute and 5 an hour; only its hash is stored; the page never says whether an account exists). The sending account is set up once with `tools/setup_email.py`. Accounts made before emails were asked add one under Settings (needs the password). On the device itself `tools/reset_password.py` still works
 - Phone app dashboard: next session goal (sets x reps per arm, kcal, minutes), sessions this week, calories per session against each session's goal, last session, why curls were not counted, history, CSV download
 - Goals from published guidelines (see "Where the goals come from")
 - Fist direction and grip (hand not clenched) are advisory (see Known limitations): the rep still counts, and the app shows a warning with pictures from the cameras when it happened in 2 or more reps
@@ -62,6 +64,8 @@ fitform-ai/
 │   ├── session_summary.py   # end-of-session totals
 │   ├── plan.py              # goal for the next session (ACSM / WHO / Compendium)
 │   ├── voice.py             # text-to-speech (Piper): one sentence at a time, priorities, no repeats
+│   ├── equipment.py         # what the user lifts (asked on the phone) and the advice to add weight
+│   ├── mailer.py            # sends password-reset codes by email (SMTP over SSL)
 │   ├── coach.py             # decides what is said out loud (reliable feedback only)
 │   ├── report.py            # personalised training report (PDF with charts)
 │   └── session_logger.py    # accounts, session storage and the phone app (Flask)
@@ -77,6 +81,7 @@ fitform-ai/
 │   ├── train_hand_classifier.py  # trains the CNN and writes models/ (PyTorch, runs in ~/cnn_env)
 │   ├── imx500_bottle_test.py     # test: can the AI Camera's on-chip object detector see a bottle?
 │   ├── setup_voice.py       # downloads the voice, prepares the spoken phrases, tests the speaker
+│   ├── setup_email.py       # sets up the email account for password-reset codes (sends a test email)
 │   ├── make_reports.py      # PDF report for every account that trained in a period
 │   └── reset_password.py    # sets a new password for an account
 ├── prototypes/
@@ -114,6 +119,7 @@ source ~/fitform_env/bin/activate
 cd ~/Final-Year-Project-FitForm-AI
 uv pip install -r requirements.txt
 python tools/setup_voice.py       # once: downloads the voice (63 MB) and prepares the spoken phrases
+python tools/setup_email.py       # once: email account for password-reset codes (e.g. Gmail + app password)
 ```
 The Pi Camera Module is read through the `rpicam-vid` command (`--camera picam`), so Picamera2 is not needed inside the environment. A USB webcam uses `--camera 0`.
 
@@ -347,8 +353,12 @@ mediapipe 0.10.21, opencv-python 4.11.0.86, numpy 1.26, Python 3.10-3.12.
 MediaPipe 1.0+ removed the `mp.solutions.pose` API this project uses, so keep the version pinned.
 
 ## Privacy
-Video is processed in memory and not recorded. Exercise numbers are logged on the Pi; passwords are stored
-hashed (PBKDF2) in `logs/users.json`. When a rep looked like it was
+Video is processed in memory and not recorded. Exercise numbers are logged on the Pi; passwords and
+password-reset codes are stored hashed (PBKDF2) in `logs/users.json`, together with each account's email
+(used only for reset codes). The account FitForm sends email from, with its app password, is in
+`logs/mail.json` (readable by the device's owner only). Like everything in `logs/`, none of this is uploaded to
+GitHub. The phone page uses plain HTTP on the local Wi-Fi, so passwords and codes travel unencrypted within that
+network. When a rep looked like it was
 done with the fist turned out, the hand not gripping or no weight in the hand, a small picture of the hand is saved
 in `logs/snaps/` (at most 6 per session) so you can check it on the phone page; it is only reachable on the local Wi-Fi. Set `MAX_SNAPSHOTS = 0` in
 `fitform/config.py` to turn this off, and delete `logs/` to remove all data.

@@ -31,6 +31,11 @@ FIELDS = [
     "avg_rep_speed_s", "load_kg",
 ]
 USERNAME = re.compile(r"^[A-Za-z0-9_.-]{3,20}$")
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+RESET_VALID_S = 10 * 60       # a reset code is valid for 10 minutes ...
+RESET_TRIES = 5               # ... and 5 tries
+RESET_GAP_S = 60              # at most one code a minute ...
+RESET_PER_HOUR = 5            # ... and 5 an hour per account
 
 
 def local_ip():
@@ -69,7 +74,7 @@ class SessionLogger:
             json.dump(users, f, indent=1)
         os.replace(tmp, self.users_path)
 
-    def register(self, name, password, weight_kg):
+    def register(self, name, password, weight_kg, email=None):
         from werkzeug.security import generate_password_hash
         if not USERNAME.match(name or ""):
             return "Username: 3-20 letters, numbers, . _ or -"
@@ -77,12 +82,87 @@ class SessionLogger:
             return "Password: at least 6 characters"
         if not 30 <= weight_kg <= 250:
             return "Body weight should be between 30 and 250 kg"
+        email = (email or "").strip().lower()
+        if email and not EMAIL.match(email):
+            return "That email address does not look right"
         with self._lock:
             users = self._users()
             if name.lower() in (u.lower() for u in users):
                 return "That username is taken"
+            if email and any(u.get("email") == email for u in users.values()):
+                return "That email is already used by another account"
             users[name] = {"pw": generate_password_hash(password, method="pbkdf2:sha256:200000"),
                            "weight": float(weight_kg), "created": time.strftime("%Y-%m-%d %H:%M:%S")}
+            if email:
+                users[name]["email"] = email
+            self._write_users(users)
+        return None
+
+    # ---------- email and password reset ----------
+    def email_of(self, name):
+        return (self._users().get(name or "") or {}).get("email")
+
+    def set_email(self, name, password, email):
+        """Adds or changes the account's email (needs the current password). Returns an error text or None."""
+        email = (email or "").strip().lower()
+        if not self.check_login(name, password):
+            return "Wrong password"
+        if not EMAIL.match(email):
+            return "That email address does not look right"
+        with self._lock:
+            users = self._users()
+            if any(n != name and u.get("email") == email for n, u in users.items()):
+                return "That email is already used by another account"
+            users[name]["email"] = email
+            self._write_users(users)
+        return None
+
+    def account_for(self, name_or_email):
+        """The username for a username (any capitals) or an email address, or None."""
+        key = (name_or_email or "").strip().lower()
+        for n, u in self._users().items():
+            if n.lower() == key or (u.get("email") and u["email"] == key):
+                return n
+        return None
+
+    def start_reset(self, name, now=None):
+        """A new 6-digit code for `name` (only its hash is stored). Returns (code, email) or (None, reason):
+        no email on the account, or asked too often (one a minute, RESET_PER_HOUR an hour)."""
+        from werkzeug.security import generate_password_hash
+        now = now or time.time()
+        with self._lock:
+            users = self._users()
+            u = users.get(name)
+            if not u or not u.get("email"):
+                return None, "no email"
+            sent = [t for t in (u.get("reset") or {}).get("sent", []) if now - t < 3600]
+            if sent and now - sent[-1] < RESET_GAP_S or len(sent) >= RESET_PER_HOUR:
+                return None, "too often"
+            code = f"{secrets.randbelow(10 ** 6):06d}"
+            u["reset"] = {"hash": generate_password_hash(code, method="pbkdf2:sha256:200000"),
+                          "until": now + RESET_VALID_S, "tries": 0, "sent": sent + [now]}
+            self._write_users(users)
+        return code, u["email"]
+
+    def finish_reset(self, name, code, password, now=None):
+        """Sets a new password if `code` is right and still valid. Returns an error text or None."""
+        from werkzeug.security import check_password_hash, generate_password_hash
+        now = now or time.time()
+        if len(password or "") < 6:
+            return "Password: at least 6 characters"
+        with self._lock:
+            users = self._users()
+            r = (users.get(name) or {}).get("reset") or {}
+            if not r.get("hash") or now > r.get("until", 0) or r.get("tries", 0) >= RESET_TRIES:
+                return "That code has expired - ask for a new one"
+            if not check_password_hash(r["hash"], (code or "").strip()):
+                r["tries"] = r.get("tries", 0) + 1
+                self._write_users(users)
+                left = RESET_TRIES - r["tries"]
+                return f"Wrong code ({left} tr{'y' if left == 1 else 'ies'} left)" if left else \
+                    "Wrong code - ask for a new one"
+            users[name]["pw"] = generate_password_hash(password, method="pbkdf2:sha256:200000")
+            users[name]["reset"] = {"sent": r.get("sent", [])}        # code used up; keep the rate limit
             self._write_users(users)
         return None
 
@@ -249,16 +329,38 @@ details summary{cursor:pointer;color:var(--muted);font-size:14px}
 LOGIN = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
 <body><main><h1>FitForm AI</h1><p class="muted">Log in to train on this device and see your progress.</p>
-{% if msg %}<p class="err">{{ msg }}</p>{% endif %}
+{% if msg %}<p class="err">{{ msg }}</p>{% endif %}{% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
 <div class="card"><h2>Log in</h2><form method="post" action="/login">
 <label>Username<input name="username" autocomplete="username" required></label>
 <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-<button>Log in</button></form></div>
+<button>Log in</button></form>
+<p class="muted" style="margin-bottom:0"><a href="/forgot">Forgot password?</a></p></div>
 <div class="card"><h2>New here? Create an account</h2><form method="post" action="/register">
 <label>Username<input name="username" autocomplete="username" required></label>
 <label>Password (6+ characters)<input name="password" type="password" autocomplete="new-password" required></label>
+<label>Email - to reset your password if you forget it<input name="email" type="email" autocomplete="email" required></label>
 <label>Body weight (kg) - used for the calorie estimate<input name="weight" type="number" step="0.5" min="30" max="250" value="70" required></label>
 <button>Create account</button></form></div></main></body></html>"""
+
+FORGOT = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
+<body><main><h1>Forgot your password?</h1>
+{% if msg %}<p class="err">{{ msg }}</p>{% endif %}
+{% if not mail_ok %}<div class="card warn"><p>Password reset by email is not set up on this device yet. Ask the
+device owner to reset it (tools/reset_password.py on the device).</p></div>
+{% elif stage == "ask" %}<div class="card"><p class="muted">Enter your username or the email of your account. We will
+email you a 6-digit code.</p><form method="post" action="/forgot">
+<label>Username or email<input name="who" value="{{ who or '' }}" autocomplete="username" required></label>
+<button>Send code</button></form></div>
+{% else %}<div class="card"><p class="ok">If an account with an email matches, a 6-digit code has been sent to it.</p>
+<p class="muted">It is valid for 10 minutes. Check your spam folder too.</p>
+<form method="post" action="/reset"><input type="hidden" name="who" value="{{ who }}">
+<label>Code from the email<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
+<label>New password (6+ characters)<input name="password" type="password" autocomplete="new-password" required></label>
+<label>New password again<input name="password2" type="password" autocomplete="new-password" required></label>
+<button>Set new password</button></form>
+<p class="muted"><a href="/forgot?who={{ who|urlencode }}">Send a new code</a></p></div>{% endif %}
+<p><a href="/">Back to log in</a></p></main></body></html>"""
 
 EQUIP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
@@ -362,6 +464,12 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div class="card"><h2>Settings</h2><form method="post" action="/weight">
 <label>Body weight (kg)<input name="weight" type="number" step="0.5" min="30" max="250" value="{{ weight }}"></label>
 <button class="ghost" style="width:100%">Save</button></form></div>
+<div class="card"><h2>Email for password reset</h2>
+{% if email %}<p class="muted">Codes go to <b>{{ email }}</b>.</p>{% else %}<p class="err">No email yet - add one, or a
+forgotten password cannot be reset from the phone.</p>{% endif %}
+<form method="post" action="/email"><label>Email<input name="email" type="email" value="{{ email or '' }}" required></label>
+<label>Your password (to confirm it is you)<input name="password" type="password" autocomplete="current-password" required></label>
+<button class="ghost" style="width:100%">Save email</button></form></div>
 <div class="card"><details><summary>Where do the goals come from?</summary><ul>
 {% for src in sources %}<li class="muted">{{ src }}</li>{% endfor %}
 <li class="muted">Calories and goals are estimates and general guidance, not professional or medical advice.</li></ul></details></div>
@@ -382,7 +490,7 @@ def snap_caption(name):
     return f"{arm.capitalize()} arm" + (f" - {ordinal(n)} curl" if is_curl else "")
 
 
-def create_app(logger, secret_key=None):
+def create_app(logger, secret_key=None, mailer=None):
     from flask import (Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory,
                        session)
     from .equipment import label as eq_label, short as eq_short
@@ -397,6 +505,9 @@ def create_app(logger, secret_key=None):
         with open(key_path) as f:
             secret_key = f.read().strip()
     app.secret_key = secret_key
+    if mailer is None:
+        from .mailer import Mailer
+        mailer = Mailer(logger.dir)
     need = ("timestamp", "reps_total", "reps_right", "reps_left", "form_accuracy_pct", "calories_kcal",
             "duration_s", "avg_rep_speed_s")
 
@@ -408,7 +519,7 @@ def create_app(logger, secret_key=None):
     def index():
         user = me()
         if not user:
-            return render_template_string(LOGIN, style=STYLE, msg=request.args.get("msg"))
+            return render_template_string(LOGIN, style=STYLE, msg=request.args.get("msg"), ok=request.args.get("ok"))
         weight = logger.user_weight(user)
         hist = [h for h in logger.history(user) if all(k in (h.get("summary") or {}) for k in need)]
         for h in hist:
@@ -422,6 +533,7 @@ def create_app(logger, secret_key=None):
         return render_template_string(DASH, style=STYLE, user=user, weight=weight, hist=hist[-12:], last=last,
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
                                       warnings=warnings, sources=SOURCES, device_user=logger.device_user(),
+                                      email=logger.email_of(user),
                                       msg=request.args.get("msg"), today=today.isoformat(), caption=snap_caption,
                                       curls=curls_line(last["summary"]) if last else None, eqlabel=eq_label, eqshort=eq_short,
                                       rep_from=(today - timedelta(days=29)).isoformat())
@@ -434,6 +546,54 @@ def create_app(logger, secret_key=None):
             return redirect("/")
         return redirect("/?msg=Wrong+username+or+password")
 
+    @app.route("/forgot", methods=["GET", "POST"])
+    def forgot():
+        """Step 1: username or email -> a 6-digit code by email. The answer is the same whether or not an account
+        matches, so the page cannot be used to find out who has an account."""
+        if request.method == "GET":
+            return render_template_string(FORGOT, style=STYLE, mail_ok=mailer.configured(), stage="ask",
+                                          who=request.args.get("who", ""), msg=request.args.get("msg"))
+        who = request.form.get("who", "").strip()
+        name = logger.account_for(who)
+        if name and mailer.configured():
+            code, email = logger.start_reset(name)
+            if code:
+                try:
+                    mailer.send(email, "Your FitForm password reset code",
+                                f"Hi {name},\n\nYour code to reset your FitForm password is: {code}\n\n"
+                                "It is valid for 10 minutes. If you did not ask for it, you can ignore this "
+                                "email - your password stays the same.\n\nFitForm AI")
+                except Exception as e:                 # network down, wrong app password, ...
+                    print(f"[MAIL] could not send the reset code: {e}")
+                    return render_template_string(FORGOT, style=STYLE, mail_ok=True, stage="ask", who=who,
+                                                  msg="The email could not be sent - please try again later.")
+        return render_template_string(FORGOT, style=STYLE, mail_ok=mailer.configured(), stage="code", who=who)
+
+    @app.route("/reset", methods=["POST"])
+    def reset():
+        """Step 2: the code from the email and a new password."""
+        who = request.form.get("who", "").strip()
+        page = lambda msg: render_template_string(FORGOT, style=STYLE, mail_ok=mailer.configured(), stage="code",
+                                                  who=who, msg=msg)
+        if request.form.get("password", "") != request.form.get("password2", ""):
+            return page("The two passwords are not the same")
+        name = logger.account_for(who)
+        err = logger.finish_reset(name, request.form.get("code"), request.form.get("password", "")) if name else \
+            "That code has expired - ask for a new one"
+        if err:
+            return page(err)
+        session.pop("user", None)
+        return redirect("/?ok=Password+changed+-+log+in+with+your+new+password")
+
+    @app.route("/email", methods=["POST"])
+    def email():
+        user = me()
+        if user:
+            err = logger.set_email(user, request.form.get("password", ""), request.form.get("email", ""))
+            if err:
+                return redirect("/?msg=" + err.replace(" ", "+"))
+        return redirect("/")
+
     @app.route("/register", methods=["POST"])
     def register():
         name = request.form.get("username", "").strip()
@@ -441,7 +601,7 @@ def create_app(logger, secret_key=None):
             weight = float(request.form.get("weight", "70"))
         except ValueError:
             weight = 0
-        err = logger.register(name, request.form.get("password", ""), weight)
+        err = logger.register(name, request.form.get("password", ""), weight, request.form.get("email"))
         if err:
             return redirect("/?msg=" + err.replace(" ", "+"))
         session["user"] = name

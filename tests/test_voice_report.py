@@ -543,6 +543,115 @@ def test_phone_asks_what_will_be_lifted():
         assert render_pdf(d)[:5] == b"%PDF-"
 
 
+# ---------- forgot password (email code) ----------
+class FakeMailer:
+    def __init__(self, ok=True):
+        self.ok, self.sent = ok, []
+
+    def configured(self):
+        return self.ok
+
+    def send(self, to, subject, body):
+        self.sent.append((to, subject, body))
+
+
+def code_in(body):
+    import re
+    return re.search(r"\b(\d{6})\b", body).group(1)
+
+
+def test_reset_codes_are_hashed_limited_and_expire():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80, "Steve@Example.com")
+        log.register("anna", "secret2", 60)                          # no email
+        assert log.email_of("steve") == "steve@example.com"
+        assert log.register("bob", "secret3", 70, "steve@example.com") == "That email is already used by another account"
+        assert log.register("bob", "secret3", 70, "not-an-email") == "That email address does not look right"
+        assert log.account_for("STEVE") == "steve" and log.account_for("steve@example.com") == "steve"
+        assert log.start_reset("anna") == (None, "no email")
+        code, to = log.start_reset("steve", now=1000.0)
+        assert to == "steve@example.com" and len(code) == 6
+        assert code not in open(os.path.join(tmp, "users.json")).read()          # only the hash is stored
+        assert log.start_reset("steve", now=1030.0) == (None, "too often")       # one a minute
+        assert log.finish_reset("steve", "000000" if code != "000000" else "111111", "newpass1", now=1040.0) \
+            .startswith("Wrong code (4 tries left)")
+        assert log.finish_reset("steve", code, "short", now=1040.0) == "Password: at least 6 characters"
+        assert log.finish_reset("steve", code, "newpass1", now=1000.0 + 601) == "That code has expired - ask for a new one"
+        code, _ = log.start_reset("steve", now=1700.0)
+        assert log.finish_reset("steve", code, "newpass1", now=1710.0) is None
+        assert log.check_login("steve", "newpass1") and not log.check_login("steve", "secret1")
+        assert log.finish_reset("steve", code, "again123", now=1720.0) == "That code has expired - ask for a new one"
+        for k in range(3):                                                        # 5 an hour in total
+            assert log.start_reset("steve", now=1800.0 + 70 * k)[0]
+        assert log.start_reset("steve", now=2100.0) == (None, "too often")
+        code, _ = log.start_reset("steve", now=5000.0)
+        for k in range(5):                                                        # 5 wrong tries use it up
+            log.finish_reset("steve", "999999" if code != "999999" else "888888", "newpass2", now=5001.0)
+        assert log.finish_reset("steve", code, "newpass2", now=5002.0) == "That code has expired - ask for a new one"
+        assert log.set_email("steve", "wrong", "a@b.co") == "Wrong password"
+        assert log.set_email("anna", "secret2", "anna@example.com") is None and log.email_of("anna") == "anna@example.com"
+
+
+def test_forgot_password_on_the_phone():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        mail = FakeMailer()
+        client = create_app(log, secret_key="test", mailer=mail).test_client()
+        r = client.post("/register", data={"username": "steve", "password": "secret1", "weight": "80",
+                                           "email": "steve@example.com"})
+        assert r.status_code == 302 and log.email_of("steve") == "steve@example.com"
+        client.get("/logout")
+        assert "Forgot password?" in client.get("/").get_data(as_text=True)
+        assert "Send code" in client.get("/forgot").get_data(as_text=True)
+        same = client.post("/forgot", data={"who": "nobody"}).get_data(as_text=True)
+        assert "If an account with an email matches" in same and not mail.sent   # no hint who exists
+        page = client.post("/forgot", data={"who": "steve@example.com"}).get_data(as_text=True)
+        assert "If an account with an email matches" in page and len(mail.sent) == 1
+        to, subject, body = mail.sent[0]
+        assert to == "steve@example.com" and "reset" in subject.lower()
+        code = code_in(body)
+        bad = client.post("/reset", data={"who": "steve@example.com", "code": code, "password": "newpass1",
+                                          "password2": "newpass2"}).get_data(as_text=True)
+        assert "not the same" in bad
+        wrong = "000000" if code != "000000" else "111111"
+        assert "Wrong code" in client.post("/reset", data={"who": "steve@example.com", "code": wrong,
+                                                           "password": "newpass1", "password2": "newpass1"}
+                                           ).get_data(as_text=True)
+        r = client.post("/reset", data={"who": "steve@example.com", "code": code, "password": "newpass1",
+                                        "password2": "newpass1"})
+        assert r.status_code == 302 and "Password+changed" in r.headers["Location"]
+        assert "Password changed" in client.get(r.headers["Location"]).get_data(as_text=True)
+        assert client.post("/login", data={"username": "steve", "password": "newpass1"}).headers["Location"] == "/"
+        page = client.get("/").get_data(as_text=True)
+        assert "Codes go to <b>steve@example.com</b>" in page
+        # not set up on this device: the page says so instead of pretending to send
+        off = create_app(log, secret_key="test", mailer=FakeMailer(ok=False)).test_client()
+        assert "not set up on this device" in off.get("/forgot").get_data(as_text=True)
+
+
+def test_email_settings_need_the_password():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("anna", "secret2", 60)                          # an account from before emails were asked
+        client = create_app(log, secret_key="test", mailer=FakeMailer()).test_client()
+        client.post("/login", data={"username": "anna", "password": "secret2"})
+        assert "No email yet" in client.get("/").get_data(as_text=True)
+        r = client.post("/email", data={"email": "anna@example.com", "password": "wrong"})
+        assert "Wrong+password" in r.headers["Location"] and log.email_of("anna") is None
+        client.post("/email", data={"email": "anna@example.com", "password": "secret2"})
+        assert log.email_of("anna") == "anna@example.com"
+
+
+def test_mail_settings_file_is_private():
+    import stat
+    from fitform.mailer import Mailer, save_settings
+    with tempfile.TemporaryDirectory() as tmp:
+        assert not Mailer(tmp).configured()
+        path = save_settings(tmp, "fitform@example.com", "abcdabcdabcdabcd")
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600 and Mailer(tmp).configured()
+
+
 # ---------- display: 'nobody there' screen and the drawn arm ----------
 def test_nobody_there_screen_waits_for_the_grace_time():
     from fitform.session import nobody_there
