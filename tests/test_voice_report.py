@@ -630,6 +630,22 @@ def test_forgot_password_on_the_phone():
         assert "not set up on this device" in off.get("/forgot").get_data(as_text=True)
 
 
+def test_failed_login_ends_the_previous_login_and_injection_strings_fail():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        client = create_app(log, secret_key="test", mailer=FakeMailer()).test_client()
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        assert "Hi steve" in client.get("/").get_data(as_text=True)
+        r = client.post("/login", data={"username": "steve", "password": "' OR 1=1 --"})
+        page = client.get(r.headers["Location"]).get_data(as_text=True)
+        assert "Hi steve" not in page and "Wrong username or password" in page and "Log in" in page
+        for bad in ("' OR 1=1", "' OR '1'='1", "\" OR 1=1 --", "*", ""):
+            for user in ("steve", bad):
+                client.post("/login", data={"username": user, "password": bad})
+                assert "Hi steve" not in client.get("/").get_data(as_text=True), (user, bad)
+
+
 def test_email_settings_need_the_password():
     with tempfile.TemporaryDirectory() as tmp:
         log = SessionLogger(tmp)

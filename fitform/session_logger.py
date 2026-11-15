@@ -540,6 +540,9 @@ def create_app(logger, secret_key=None, mailer=None):
 
     @app.route("/login", methods=["POST"])
     def login():
+        # any login attempt ends the previous login on this phone first - otherwise a failed attempt still showed
+        # the previous user's dashboard and looked like a successful login (16 Nov test with "' OR 1=1")
+        session.pop("user", None)
         name = request.form.get("username", "").strip()
         if logger.check_login(name, request.form.get("password", "")):
             session["user"] = name
