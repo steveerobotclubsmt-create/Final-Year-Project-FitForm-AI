@@ -123,6 +123,17 @@ FULLSCREEN = True            # window fills the whole screen at start (no keyboa
 MESSAGE_HOLD_SECONDS = 1.0   # a feedback message stays at least this long (stops the text flickering)
 
 
+# ---- Spoken feedback (Piper text-to-speech, offline; see voice.py / coach.py) ----
+VOICE_ENABLED = True         # silent anyway without a voice model, Piper or a speaker; --no-voice turns it off
+VOICE_MODEL = "models/voices/en_GB-cori-medium.onnx"   # downloaded once, see README (not on GitHub, 63 MB)
+VOICE_CACHE_DIR = "~/.cache/fitform/voice"             # sentences are made once and kept here as WAV files
+VOICE_VOLUME = 1.0           # 1.0 = normal; the speaker's own volume is the main control
+VOICE_SPEED = 1.0            # > 1 speaks faster
+VOICE_COUNT_REPS = True      # say the number after each counted rep
+VOICE_LIVE_WARNINGS = True   # say an arm fault during the lift (only the reliable arm checks, never the hand ones)
+VOICE_LIVE_HOLD_SECONDS = 0.4  # ... once it has lasted this long (one-frame blips are never spoken)
+VOICE_REPEAT_SECONDS = 20.0  # the same fix is said at most once in this time; after that just 'Not counted.'
+
 # ---- Calories ----
 USER_WEIGHT_KG = 70.0
 MET_BICEP_CURL = 3.5         # moderate resistance training

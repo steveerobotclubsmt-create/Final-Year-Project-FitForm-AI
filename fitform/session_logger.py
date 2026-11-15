@@ -20,6 +20,7 @@ import secrets
 import socket
 import threading
 import time
+from datetime import date, timedelta
 
 from . import config
 
@@ -218,6 +219,7 @@ button,.btn{display:inline-block;width:100%;padding:12px;border:0;border-radius:
 .ok{color:var(--good);font-weight:600}.err{color:#dc2626;font-weight:600}
 svg text{fill:var(--muted);font-size:10px}a{color:var(--accent)}
 details summary{cursor:pointer;color:var(--muted);font-size:14px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:380px){.tiles{grid-template-columns:repeat(2,1fr)}}
 """
 
@@ -239,6 +241,7 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
 <body><main>
 <div class="top"><h1>Hi {{ user }}</h1><a class="btn ghost" href="/logout">Log out</a></div>
+{% if msg %}<p class="err">{{ msg }}</p>{% endif %}
 <div class="card">
 {% if device_user == user %}<p class="ok">This device is ready for you - stand in front of the camera and start.</p>
 <p class="muted">Your session is saved to your account when you walk away.</p>
@@ -297,6 +300,15 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <td>{{ '%.0f'|format(h.summary.form_accuracy_pct) }}%</td><td>{{ '%.1f'|format(h.summary.calories_kcal) }}</td>
 <td>{{ '&#10003;'|safe if h.plan and h.plan.met_goal else '-' }}</td></tr>{% endfor %}</table>
 <p class="muted"><a href="/sessions.csv">Download my sessions (CSV)</a></p></div>
+
+<div class="card"><h2>My report (PDF)</h2>
+<p class="muted">Calories burned, reps, form, training days and what to work on - for the dates you choose.</p>
+<form method="get" action="/report.pdf"><div class="two">
+<label>From<input type="date" name="from" value="{{ rep_from }}" max="{{ today }}" required></label>
+<label>To<input type="date" name="to" value="{{ today }}" max="{{ today }}" required></label></div>
+<button>Download my report</button></form>
+<p class="muted" style="margin-bottom:0">Quick: <a href="/report.pdf?days=7">last 7 days</a> &middot;
+<a href="/report.pdf?days=30">last 30 days</a> &middot; <a href="/report.pdf?all=1">all my sessions</a></p></div>
 {% else %}
 <div class="card"><p>No sessions yet. Tap <b>Train on this device</b>, stand in front of the camera and start curling.</p></div>
 {% endif %}
@@ -350,9 +362,12 @@ def create_app(logger, secret_key=None):
             warnings.append(("grip", "Check your grip", plan["grip_warning"]))
         if plan and plan.get("weight_warning"):
             warnings.append(("weight", "No weight in your hand?", plan["weight_warning"]))
+        today = date.today()
         return render_template_string(DASH, style=STYLE, user=user, weight=weight, hist=hist[-12:], last=last,
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
-                                      warnings=warnings, sources=SOURCES, device_user=logger.device_user())
+                                      warnings=warnings, sources=SOURCES, device_user=logger.device_user(),
+                                      msg=request.args.get("msg"), today=today.isoformat(),
+                                      rep_from=(today - timedelta(days=29)).isoformat())
 
     @app.route("/login", methods=["POST"])
     def login():
@@ -404,6 +419,36 @@ def create_app(logger, secret_key=None):
         if name not in mine:
             abort(404)
         return send_from_directory(logger.snap_dir, name)
+
+    @app.route("/report.pdf")
+    def report_pdf():
+        """My training report for a period: ?from=YYYY-MM-DD&to=YYYY-MM-DD, ?days=N (up to today) or ?all=1."""
+        from .report import make_report, period_records
+        user = me()
+        if not user:
+            return redirect("/")
+        today = date.today()
+        try:
+            if request.args.get("all"):
+                recs = period_records(logger.history(user), date.min, date.max)
+                start = date.fromisoformat(recs[0]["summary"]["timestamp"][:10]) if recs else today
+                end = max(today, start)
+            elif request.args.get("days"):
+                days = max(1, min(3660, int(request.args["days"])))
+                start, end = today - timedelta(days=days - 1), today
+            else:
+                start, end = date.fromisoformat(request.args["from"]), date.fromisoformat(request.args["to"])
+        except (KeyError, ValueError):
+            return redirect("/?msg=Choose+a+start+and+an+end+date")
+        if start > end:
+            return redirect("/?msg=The+start+date+must+be+before+the+end+date")
+        if start.year < 2000 or (end - start).days > 3660:
+            return redirect("/?msg=Choose+a+period+of+up+to+10+years")
+        pdf = make_report(logger, user, start, end, today=today)
+        if pdf is None:
+            return redirect(f"/?msg=No+sessions+between+{start.isoformat()}+and+{end.isoformat()}")
+        name = f"fitform_report_{user}_{start.isoformat()}_{end.isoformat()}.pdf"
+        return pdf, 200, {"Content-Type": "application/pdf", "Content-Disposition": f'inline; filename="{name}"'}
 
     @app.route("/sessions")
     def sessions():

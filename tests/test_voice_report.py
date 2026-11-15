@@ -1,0 +1,412 @@
+"""Tests for the spoken feedback (voice.py, coach.py) and the personalised report (report.py, /report.pdf,
+tools/make_reports.py). No camera, speaker or voice model needed: speech is recorded instead of played.
+Run from the project folder with:  python tests/test_voice_report.py   (or: python -m pytest -q)"""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from datetime import date, datetime, timedelta
+from types import SimpleNamespace
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from fitform import config  # noqa: E402
+from fitform.coach import Coach  # noqa: E402
+from fitform.plan import goal_for  # noqa: E402
+from fitform.report import make_report, period_records, render_pdf, report_data  # noqa: E402
+from fitform.session_logger import SessionLogger, create_app  # noqa: E402
+from fitform.voice import COUNT, REJECT, SESSION, TIP, Voice  # noqa: E402
+
+config.VOICE_COUNT_REPS = True
+config.VOICE_LIVE_WARNINGS = True
+config.VOICE_LIVE_HOLD_SECONDS = 0.4
+config.VOICE_REPEAT_SECONDS = 20.0
+
+
+# ---------- helpers ----------
+class Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+def quiet_voice(clock):
+    """A Voice that records what it would say; the test takes sentences off the queue itself."""
+    return Voice(synth=lambda text: text, play=lambda path: None, clock=clock, start=False)
+
+
+def said(voice):
+    """Speaks whatever is waiting (as the worker would) and returns it, or None."""
+    item = voice.next_item()
+    if item is None:
+        return None
+    voice.speak_now(item)
+    return item.text
+
+
+def counter(count=0, reject_key=None, ready=True, stage=None, elbow=170.0, **flags):
+    return SimpleNamespace(count=count, reject_key=reject_key, ready=ready, stage=stage, blocked_until=0.0,
+                           last={"elbow_angle": elbow, **flags})
+
+
+def counters(**kw):
+    return {"right": kw.get("right") or counter(), "left": kw.get("left") or counter()}
+
+
+# ---------- voice: one sentence at a time ----------
+def test_more_important_sentence_replaces_a_waiting_one():
+    clock = Clock()
+    v = quiet_voice(clock)
+    assert v.say("3", COUNT, ttl=1.5)
+    assert v.say("Not counted.", REJECT, ttl=4)        # replaces the waiting number
+    assert not v.say("4", COUNT, ttl=1.5)              # a number does not push out a waiting rejection
+    assert said(v) == "Not counted."
+    assert said(v) is None
+
+
+def test_newest_sentence_of_the_same_kind_wins():
+    clock = Clock()
+    v = quiet_voice(clock)
+    v.say("3", COUNT, ttl=1.5)
+    v.say("4", COUNT, ttl=1.5)
+    assert said(v) == "4"                               # never an out-of-date rep number
+
+
+def test_late_sentences_are_dropped():
+    clock = Clock()
+    v = quiet_voice(clock)
+    v.say("5", COUNT, ttl=1.5)
+    clock.t += 2.0
+    assert said(v) is None
+    v.say("Not counted.", REJECT, ttl=4)
+    clock.t += 2.0                                      # waited, but still in time
+    v.say("6", COUNT, ttl=1.5)                          # lower priority: dropped while the rejection waits
+    assert said(v) == "Not counted."
+
+
+def test_expired_waiting_sentence_does_not_block_a_less_important_one():
+    clock = Clock()
+    v = quiet_voice(clock)
+    v.say("Not counted.", REJECT, ttl=4)
+    clock.t += 5.0
+    assert v.say("7", COUNT, ttl=1.5)
+    assert said(v) == "7"
+
+
+def test_same_key_is_not_repeated_within_its_cooldown():
+    clock = Clock()
+    v = quiet_voice(clock)
+    assert v.say("Keep your elbow still", TIP, key="elbow", cooldown=20)
+    said(v)
+    clock.t += 5
+    assert not v.say("Keep your elbow still", TIP, key="elbow", cooldown=20)
+    clock.t += 16
+    assert v.say("Keep your elbow still", TIP, key="elbow", cooldown=20)
+
+
+def test_speech_never_overlaps():
+    """Sentences from several threads at once are spoken strictly one after another."""
+    playing, overlaps, done = [0], [0], []
+    lock = threading.Lock()
+
+    def play(path):
+        with lock:
+            playing[0] += 1
+            overlaps[0] = max(overlaps[0], playing[0])
+        time.sleep(0.02)
+        with lock:
+            playing[0] -= 1
+            done.append(path)
+
+    v = Voice(synth=lambda text: text, play=play)
+    threads = [threading.Thread(target=lambda i=i: [v.say(f"{i}-{k}", (k % 4) + 1) or time.sleep(0.005)
+                                                   for k in range(20)]) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    end = time.time() + 3
+    while v.busy() and time.time() < end:
+        time.sleep(0.01)
+    v.close()
+    assert overlaps[0] == 1 and done
+
+
+def test_voice_is_silent_without_a_model_or_when_off():
+    assert not Voice(enabled=False).ready
+    assert not Voice(model="models/voices/no_such_voice.onnx").ready
+    assert not Voice(enabled=False).say("hello", SESSION)
+
+
+def test_a_broken_speaker_does_not_stop_the_app():
+    def play(path):
+        raise OSError("no audio device")
+    v = Voice(synth=lambda text: text, play=play, start=False)
+    v.say("hello", SESSION)
+    v.speak_now(v.next_item())                          # no exception
+    assert v.spoken == ["hello"]
+
+
+# ---------- coach: what is said ----------
+def test_rejection_says_the_fix_once_then_only_not_counted():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_events([("right", "rejected")], counters(right=counter(reject_key="elbow")))
+    assert said(v) == "Not counted. Keep your elbow still at your side."
+    clock.t += 5
+    c.on_events([("right", "rejected")], counters(right=counter(reject_key="elbow")))
+    assert said(v) == "Not counted."
+    clock.t += 21
+    c.on_events([("right", "rejected")], counters(right=counter(reject_key="elbow")))
+    assert said(v) == "Not counted. Keep your elbow still at your side."
+
+
+def test_unreliable_hand_reasons_are_never_spoken():
+    for key in ("fist", "palm_dir", "hand_hidden", "no_weight", "wrist", None):
+        clock = Clock()
+        v = quiet_voice(clock)
+        Coach(v, clock=clock).on_events([("left", "rejected")], counters(left=counter(reject_key=key)))
+        assert said(v) == "Not counted.", key
+
+
+def test_tempo_reasons_are_spoken():
+    for key, fix in (("fast", "Lift a little slower"), ("drop", "Lower the weight slowly"),
+                     ("not_lowered", "Straighten your arm fully at the bottom")):
+        clock = Clock()
+        v = quiet_voice(clock)
+        Coach(v, clock=clock).on_events([("right", "rejected")], counters(right=counter(reject_key=key)))
+        assert said(v) == f"Not counted. {fix}."
+
+
+def test_rep_numbers_name_the_arm_only_when_both_arms_are_used():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_events([("right", "counted")], counters(right=counter(count=1)))
+    assert said(v) == "1"
+    clock.t += 3
+    c.on_events([("left", "counted")], counters(left=counter(count=1)))
+    assert said(v) == "Left, 1"
+    clock.t += 3
+    c.on_events([("right", "counted"), ("left", "counted")], counters(right=counter(count=2), left=counter(count=2)))
+    assert said(v) == "Right, 2, Left, 2"                # one sentence, not two that clash
+    clock.t += 25                                       # left arm not used for a while
+    c.on_events([("right", "counted")], counters(right=counter(count=3)))
+    assert said(v) == "3"
+
+
+def test_rejection_wins_over_a_count_in_the_same_frame():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_events([("right", "counted"), ("left", "rejected")],
+                counters(right=counter(count=4), left=counter(reject_key="fast")))
+    assert said(v) == "Left. Not counted. Lift a little slower."
+
+
+def test_both_arms_rejected_together_is_one_sentence():
+    clock = Clock()
+    v = quiet_voice(clock)
+    Coach(v, clock=clock).on_events([("right", "rejected"), ("left", "rejected")],
+                                    counters(right=counter(reject_key="drop"), left=counter(reject_key="drop")))
+    assert said(v) == "Both arms. Not counted. Lower the weight slowly."
+
+
+def test_rep_count_can_be_switched_off():
+    clock = Clock()
+    v = quiet_voice(clock)
+    config.VOICE_COUNT_REPS = False
+    try:
+        Coach(v, clock=clock).on_events([("right", "counted")], counters(right=counter(count=1)))
+        assert said(v) is None
+    finally:
+        config.VOICE_COUNT_REPS = True
+
+
+def test_live_warning_needs_the_fault_to_last_and_is_said_once():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    lifting = counter(stage="down", elbow=100.0, arm_tilted=True)
+    cs = counters(right=lifting)
+    c.on_frame(cs, ["right"])
+    assert said(v) is None                              # just started: could be a blip
+    clock.t += 0.5
+    c.on_frame(cs, ["right"])
+    assert said(v) == "Keep your upper arm pointing down"
+    clock.t += 1
+    c.on_frame(cs, ["right"])
+    clock.t += 1
+    c.on_frame(cs, ["right"])
+    assert said(v) is None                              # not repeated
+    # ... and the rejection that follows does not say the same fix again
+    c.on_events([("right", "rejected")], counters(right=counter(reject_key="arm_tilt")))
+    assert said(v) == "Not counted."
+
+
+def test_live_warning_only_during_the_lift_and_never_for_the_hand():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    straight = counter(stage="down", elbow=170.0, arm_tilted=True)          # not lifting yet
+    hand = counter(stage="down", elbow=100.0, hand_open=True, palm_away=True)
+    not_ready = counter(ready=False, stage=None, elbow=100.0, elbow_swinging=True)
+    for cs in (counters(right=straight), counters(right=hand), counters(right=not_ready)):
+        for _ in range(3):
+            c.on_frame(cs, ["right"])
+            clock.t += 0.5
+        assert said(v) is None
+
+
+def test_live_warning_waits_while_something_is_being_said():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    v.say("Right, 3", COUNT, ttl=1.5)                   # still waiting to be said
+    cs = counters(right=counter(stage="down", elbow=100.0, elbow_swinging=True))
+    c.on_frame(cs, ["right"])
+    clock.t += 0.5
+    c.on_frame(cs, ["right"])
+    assert said(v) == "Right, 3"
+    c.on_frame(cs, ["right"])
+    assert said(v) == "Keep your elbow still at your side"
+
+
+def test_greeting_once_per_login_and_session_result_with_calories():
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_login("steve_01")
+    assert said(v) == "Hi steve 01. Hold your arms straight to start."
+    c.on_login("steve_01")
+    assert said(v) is None
+    c.on_session_end({"reps_total": 24, "calories_kcal": 6.4},
+                     {"met_goal": True, "goal": {"sets": 3, "reps": 10}})
+    assert said(v) == ("Session saved. 24 reps counted. About 6 calories burned. Goal reached! "
+                       "Next goal: 3 sets of 10 per arm.")
+    c.on_logout()
+    c.on_login("steve_01")
+    assert said(v).startswith("Hi steve 01")
+    c.on_session_end({"reps_total": 1, "calories_kcal": 0.3}, None)
+    assert said(v) == "Session saved. 1 rep counted. Less than 1 calorie burned."
+    c.on_session_end({"reps_total": 0, "calories_kcal": 0.0}, None)
+    assert said(v) == "Session saved. 0 reps counted."
+
+
+# ---------- report ----------
+def rec(when, user="steve", right=10, left=8, attempted=20, kcal=5.0, active=120.0, lift=1.0, step=0, met=False,
+        reasons=None, weight=80):
+    s = {"timestamp": when.strftime("%Y-%m-%d %H:%M:%S"), "user": user, "exercise": "bicep_curl",
+         "reps_right": right, "reps_left": left, "reps_total": right + left, "attempted_total": attempted,
+         "form_accuracy_pct": round(100.0 * (right + left) / attempted, 1) if attempted else 0.0,
+         "duration_s": active, "calories_kcal": kcal, "avg_rep_speed_s": lift, "weight_kg": weight,
+         "not_counted_keys": reasons or {}, "palm_flags_right": 1, "grip_flags_left": 2}
+    plan = {"this_goal": goal_for(step, weight), "goal": goal_for(min(step + int(met), 2), weight), "met_goal": met,
+            "weight": "Keep the same weight."}
+    return {"summary": s, "plan": plan}
+
+
+def history():
+    d = datetime(2026, 11, 2, 18, 0)                    # a Monday
+    return [rec(d - timedelta(days=7), right=4, left=4, attempted=10, kcal=2.0),     # the week before
+            rec(d, reasons={"fast": 2}), rec(d + timedelta(hours=2), kcal=3.0, reasons={"fast": 1, "elbow": 1}),
+            rec(d + timedelta(days=3), right=12, left=12, attempted=24, kcal=7.5, met=True),
+            rec(d + timedelta(days=9), attempted=0, right=0, left=0)]                 # no curls: left out
+
+
+def test_period_records_pick_days_inclusive():
+    h = history()
+    recs = period_records(h, date(2026, 11, 2), date(2026, 11, 8))
+    assert [r["summary"]["timestamp"][:10] for r in recs] == ["2026-11-02", "2026-11-02", "2026-11-05"]
+    assert period_records(h, date(2026, 11, 11), date(2026, 11, 11)) == []           # 0 curls: not a session
+
+
+def test_report_numbers_and_calories():
+    d = report_data("steve", history(), date(2026, 11, 2), date(2026, 11, 8), 80, today=date(2026, 11, 8))
+    t = d["totals"]
+    assert t["sessions"] == 3 and t["days"] == 2
+    assert t["reps"] == 18 + 18 + 24 and t["attempted"] == 64
+    assert t["kcal"] == 15.5 and d["kcal_per_session"] == 5.2
+    assert d["goal_kcal_total"] == round(3 * goal_for(0, 80)["kcal"], 1)
+    assert d["best_kcal"]["kcal"] == 7.5
+    assert d["reps_right"] == 32 and d["reps_left"] == 28
+    assert d["goals_met"] == 1 and d["goals_judged"] == 3
+    assert d["next_goal"]["step"] == 1                 # goal reached on the last session -> 3 x 10
+    assert d["reasons"][0] == ("fast", 3)
+    assert d["flags"] == {"palm": 3, "grip": 6, "weight": 0}
+    assert d["weeks"][0]["days"] == 2 and d["weeks_on_target"] == 1 and d["full_weeks"] == 1
+    p = d["prev"]                                       # 26 Oct - 1 Nov
+    assert p["sessions"] == 1 and p["reps"] == 8 and p["kcal"] == 2.0
+    assert any("Lift a little slower" in a for a in d["advice"])
+
+
+def test_report_reads_older_sessions_without_reason_keys():
+    r = rec(datetime(2026, 11, 3, 10, 0))
+    r["summary"].pop("not_counted_keys")
+    r["summary"]["not_counted"] = {"too fast": 2, "lowered too fast": 1}
+    d = report_data("steve", [r], date(2026, 11, 1), date(2026, 11, 7), 80)
+    assert dict(d["reasons"]) == {"fast": 2, "drop": 1}
+
+
+def test_no_report_without_sessions_and_pdf_is_made():
+    assert report_data("steve", history(), date(2026, 12, 1), date(2026, 12, 31), 80) is None
+    d = report_data("steve", history(), date(2026, 10, 1), date(2026, 11, 30), 80, today=date(2026, 11, 30))
+    pdf = render_pdf(d)
+    assert pdf[:5] == b"%PDF-" and len(pdf) > 20000
+    one = report_data("steve", history()[:1], date(2026, 10, 26), date(2026, 10, 26), 80)
+    assert render_pdf(one)[:5] == b"%PDF-"            # a single session works too
+
+
+def test_report_on_the_phone_page():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        for r in history():
+            log.save(r["summary"], r["plan"])
+        log.save(rec(datetime(2026, 11, 3, 9, 0), user="anna")["summary"], None)
+        client = create_app(log, secret_key="test").test_client()
+        assert client.get("/report.pdf?days=30").status_code == 302          # not logged in
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        assert "My report (PDF)" in client.get("/").get_data(as_text=True)
+        r = client.get("/report.pdf?from=2026-11-02&to=2026-11-08")
+        assert r.status_code == 200 and r.headers["Content-Type"] == "application/pdf"
+        assert r.data[:5] == b"%PDF-" and "fitform_report_steve_2026-11-02_2026-11-08.pdf" in r.headers[
+            "Content-Disposition"]
+        assert client.get("/report.pdf?all=1").status_code == 200
+        r = client.get("/report.pdf?from=2026-12-01&to=2026-12-31")
+        assert r.status_code == 302 and "No+sessions" in r.headers["Location"]
+        assert "No sessions between" in client.get(r.headers["Location"]).get_data(as_text=True)
+        for q in ("?from=2026-11-08&to=2026-11-02", "?from=x&to=y", "?days=abc", "?from=0001-01-01&to=2026-11-08"):
+            assert client.get("/report.pdf" + q).status_code == 302, q
+        assert make_report(log, "anna", date(2026, 11, 1), date(2026, 11, 30)) is not None
+        assert make_report(log, "nobody", date(2026, 11, 1), date(2026, 11, 30)) is None
+
+
+def test_make_reports_tool_writes_one_pdf_per_active_account():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(os.path.join(tmp, "logs"))
+        log.register("steve", "secret1", 80)
+        log.register("anna", "secret2", 60)
+        for r in history():
+            log.save(r["summary"], r["plan"])               # only steve trained
+        out = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "make_reports.py"), "--from", "2026-11-02",
+                              "--to", "2026-11-08"], cwd=tmp, capture_output=True, text=True, timeout=120)
+        assert out.returncode == 0, out.stderr
+        files = os.listdir(os.path.join(tmp, "logs", "reports"))
+        assert files == ["steve_2026-11-02_2026-11-08.pdf"], files
+        assert "anna: no sessions" in out.stdout
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_"):
+            fn()
+            print("passed", name)

@@ -16,3 +16,6 @@ logs/
 tempCodeRunnerFile*
 .DS_Store
 Thumbs.db
+
+# Piper voice models (63 MB each - downloaded on the device, see README)
+models/voices/

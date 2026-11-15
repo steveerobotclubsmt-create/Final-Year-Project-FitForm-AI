@@ -14,6 +14,8 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 - Weight-in-hand check (CNN): a small neural network (MobileNetV3-Small, fine-tuned on hand pictures from labelled clips) looks at each hand on the front camera and decides "holding a weight" or "empty hand", once per rep. It is advice only: when it happened in 2 or more reps, the phone page shows a "No weight in your hand?" card with pictures. See "Weight-in-hand CNN" below
 - Two cameras: Raspberry Pi AI Camera in front (counting) + USB webcam at the side (`--side-camera 0`); either camera can confirm the grip
 - When a curl is not counted, the screen shows why and what to do (e.g. "Keep your upper arm pointing down"), with a short pause before the next rep
+- Spoken feedback (offline Piper voice): the rep count, why a rep was not counted and what to do, live arm warnings during the lift, a greeting after logging in and the session result with calories burned. Only feedback the system is reliable at is spoken - the hand checks are not - and it never repeats itself or talks over itself. See "Spoken feedback" below
+- Personalised training report (PDF) for any period: calories burned, reps, form, training days, what to work on and progress, downloaded from the phone page or made for every active account with `tools/make_reports.py`. See "Training report" below
 - Start-up demo: an animated stick figure showing a correct curl and the key rules (fist facing the body)
 - No keyboard needed: the window opens full screen, and a session ends when you walk away (5 s) or stop curling (30 s)
 - Camera watchdog: if the Pi camera sends no picture for 3 s (seen when the Pi was hot and throttled), it is restarted by itself
@@ -48,16 +50,22 @@ fitform-ai/
 │   ├── session.py           # ends a session when the user walks away or stops
 │   ├── session_summary.py   # end-of-session totals
 │   ├── plan.py              # goal for the next session (ACSM / WHO / Compendium)
+│   ├── voice.py             # text-to-speech (Piper): one sentence at a time, priorities, no repeats
+│   ├── coach.py             # decides what is said out loud (reliable feedback only)
+│   ├── report.py            # personalised training report (PDF with charts)
 │   └── session_logger.py    # accounts, session storage and the phone app (Flask)
 ├── models/
 │   ├── hand_holding.onnx    # trained weight-in-hand CNN (MobileNetV3-Small, ONNX)
-│   └── hand_holding_report.txt   # training data and test results of the CNN
+│   ├── hand_holding_report.txt   # training data and test results of the CNN
+│   └── voices/              # Piper voice (downloaded by tools/setup_voice.py, not uploaded to GitHub)
 ├── tools/
 │   ├── fist_calibrate.py    # builds the fist-direction calibration from labelled runs
 │   ├── record_clips.py      # records labelled two-camera test clips (rep checks and CNN training data)
 │   ├── hand_crops.py        # cuts labelled hand pictures out of the clips for training
 │   ├── train_hand_classifier.py  # trains the CNN and writes models/ (PyTorch, runs in ~/cnn_env)
 │   ├── imx500_bottle_test.py     # test: can the AI Camera's on-chip object detector see a bottle?
+│   ├── setup_voice.py       # downloads the voice, prepares the spoken phrases, tests the speaker
+│   ├── make_reports.py      # PDF report for every account that trained in a period
 │   └── reset_password.py    # sets a new password for an account
 ├── prototypes/
 │   └── bicep_curl_single_camera.py   # original single-file laptop prototype
@@ -67,7 +75,8 @@ fitform-ai/
 │   ├── figures/             # block diagrams and figures for the logbooks/report
 │   └── photos/              # photos of the hardware and parts
 ├── tests/
-│   └── test_logic.py        # tests for counting, goals, accounts and the app (no camera needed)
+│   ├── test_logic.py        # tests for counting, goals, accounts and the app (no camera needed)
+│   └── test_voice_report.py # tests for the spoken feedback and the training report
 ├── logs/                    # sessions, accounts, hand pictures, clips and training crops (not uploaded to GitHub)
 └── requirements.txt
 ```
@@ -92,6 +101,7 @@ uv venv --python 3.12 ~/fitform_env
 source ~/fitform_env/bin/activate
 cd ~/Final-Year-Project-FitForm-AI
 uv pip install -r requirements.txt
+python tools/setup_voice.py       # once: downloads the voice (63 MB) and prepares the spoken phrases
 ```
 The Pi Camera Module is read through the `rpicam-vid` command (`--camera picam`), so Picamera2 is not needed inside the environment. A USB webcam uses `--camera 0`.
 
@@ -112,6 +122,7 @@ python main.py --video clip.mp4   # test on a recorded video
 python main.py --no-demo --no-gpio --no-server --debug
 python main.py --windowed         # normal window instead of full screen
 python main.py --no-hold          # turn off the weight-in-hand CNN
+python main.py --no-voice         # no spoken feedback
 ```
 Cameras are found automatically: the Raspberry Pi AI Camera is the front camera when it is connected and a
 USB webcam becomes the side camera; without the AI Camera, the USB webcam is the front camera. At least one
@@ -162,6 +173,55 @@ python3 -m venv ~/cnn_env
 ~/cnn_env/bin/python tools/train_hand_classifier.py --train 1 --test 2
 ```
 
+## Spoken feedback
+FitForm speaks through any speaker the Pi plays sound on (USB speaker, Bluetooth speaker or a monitor with
+speakers over HDMI - the Pi 5 has no headphone socket). The voice is [Piper](https://github.com/rhasspy/piper),
+a neural text-to-speech model that runs offline on the Pi's CPU (`en_GB-cori-medium` by default,
+`VOICE_MODEL` in `fitform/config.py`). Set it up once with `python tools/setup_voice.py`; it downloads the voice,
+prepares the fixed phrases (about 20 s) and plays a test sentence.
+
+What is said - only feedback the system is reliable at:
+
+| When | Example |
+|---|---|
+| After logging in on the phone | "Hi Steve. Hold your arms straight to start." |
+| A rep is counted | "5" (or "Right, 5" while both arms are in use) |
+| A rep is not counted for an arm or tempo reason | "Not counted. Keep your elbow by your side." |
+| During the lift, an arm fault lasting 0.4 s | "Keep your upper arm pointing down" |
+| The session is saved | "Session saved. 24 reps counted. About 6 calories burned. Goal reached! Next goal: 3 sets of 10 per arm." |
+
+The hand checks (grip, fist direction, weight in the hand, hand not visible) are never spoken: they can be wrong
+(see Known limitations), so they stay on the phone page, with pictures. A rep rejected only for a hand reason
+just says "Not counted."
+
+No repeats, no clashes: one sentence at a time, never cut off; a more important sentence replaces a less
+important one that is still waiting; a rep number or tip that cannot be said in time is dropped rather than said
+late; the same fix is said at most once in 20 s (after that just "Not counted."); a live warning that was just
+said is not repeated by the rejection that follows; both arms finishing together become one sentence. Every
+sentence is also printed in the terminal as `[VOICE] "..."`. Settings: `VOICE_*` in `fitform/config.py`;
+`--no-voice` turns it off. Without a speaker, Piper or the voice file, FitForm runs silently as before.
+
+Speech uses one CPU core at low priority, and phrases are made once and kept in `~/.cache/fitform/voice`, so the
+frame rate is unchanged (tested 15 Nov: 14.3-14.6 FPS with the voice, 14.3 without, on a recorded clip).
+
+## Training report
+A personalised PDF report for one account over any period: sessions and training days, reps (right / left),
+share of curls counted, **calories burned** (total, per session against each session's goal, best session),
+active time, average lift time, charts per session, training days per week against the WHO target, the main
+reasons curls were not counted with what to do, goal progress, a comparison with the previous period of the same
+length, and every session in a table.
+
+- **On the phone:** the dashboard's **My report (PDF)** card - choose the dates, or last 7 / 30 days / all.
+- **On the device, for every account that trained in a period:**
+  ```bash
+  python tools/make_reports.py                 # last 7 days
+  python tools/make_reports.py --days 30       # last 30 days
+  python tools/make_reports.py --from 2026-11-01 --to 2026-11-30 --user Steve
+  ```
+  The PDFs go to `logs/reports/` (not uploaded to GitHub - they hold personal data).
+
+Making a report takes about 1 s on the Pi 5; during that second the camera loop slows to about 10 FPS.
+
 ## Where the goals come from
 - Sets and reps: novices 1-3 sets of 8-12 reps; add 2-10 % load once 1-2 extra reps are possible on two
   consecutive sessions; 1-2 min rest for assistance exercises - Ratamess et al., ACSM position stand,
@@ -188,6 +248,9 @@ python3 -m venv ~/cnn_env
   extension) catch bad reps well, the hand checks less consistently.
 - Calories are an estimate (MET formula), not a measurement. The plan is general guidance, not coaching.
 - Frame rate on the Pi 5 is about 13-16 FPS with two cameras, so very fast reps can be timed less accurately.
+- **Spoken rep numbers can be skipped** when both arms finish reps in quick succession: a number that cannot
+  be said before the next rep is dropped rather than said late (by design - no clashes, no out-of-date counts).
+  The screen always shows the count.
 
 ## Wiring (default BCM pins, change in `fitform/config.py`)
 | Component | GPIO pin | Notes |
@@ -199,6 +262,7 @@ python3 -m venv ~/cnn_env
 ## Tests
 ```bash
 python tests/test_logic.py
+python tests/test_voice_report.py
 ```
 
 ## Tested versions

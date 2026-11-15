@@ -18,6 +18,7 @@ import cv2
 from fitform import config
 from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
+from fitform.coach import Coach
 from fitform.display_ui import draw_arm, draw_debug, draw_demo, draw_hud, draw_idle, draw_qr_corner, draw_saved, \
     fit_to_screen
 from fitform.feedback_engine import FeedbackEngine
@@ -28,6 +29,7 @@ from fitform.plan import make_plan
 from fitform.session import SessionTracker, curls_allowed
 from fitform.session_logger import SessionLogger, local_ip, start_server
 from fitform.session_summary import build_summary, print_summary
+from fitform.voice import Voice
 
 
 def parse_args():
@@ -45,6 +47,7 @@ def parse_args():
     p.add_argument("--no-fist", action="store_true", help="do not require a clenched fist")
     p.add_argument("--no-palm", action="store_true", help="turn off the palm-direction check")
     p.add_argument("--no-hold", action="store_true", help="turn off the 'weight in the hand' check (CNN)")
+    p.add_argument("--no-voice", action="store_true", help="turn off the spoken feedback")
     p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
     p.add_argument("--debug-screen", action="store_true", help="also show the tuning numbers on the video window")
     p.add_argument("--angles", choices=["3d", "2d"], help="elbow angle from 3D world landmarks or 2D image points")
@@ -122,6 +125,12 @@ def main():
     logger = SessionLogger()
     if config.FLASK_ENABLED and not args.no_server:
         start_server(logger)
+    voice = Voice(enabled=config.VOICE_ENABLED and not args.no_voice)
+    coach = Coach(voice)
+    if voice.ready:
+        voice.prepare(coach.phrases())
+        print(f"Voice: {os.path.basename(config.VOICE_MODEL)} (rep count {'on' if config.VOICE_COUNT_REPS else 'off'}, "
+              f"live warnings {'on' if config.VOICE_LIVE_WARNINGS else 'off'})")
 
     side = None
     if args.side_camera is not None and config.PALM_CHECK:
@@ -177,7 +186,9 @@ def main():
         plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
         print_summary(summary, plan)
         logger.save(summary, plan)
+        coach.on_session_end(summary, plan)
         logger.clear_device_user()
+        coach.on_logout()
         feedback.reset()
         calories.reset()
         tracker.end()
@@ -306,6 +317,16 @@ def main():
                 print(f"Session started for {session_user or 'guest'} ({calories.weight_kg:.0f} kg)")
             if tracker.active:
                 logger.keep_device_user()
+            # spoken feedback - not during the start-up demo (curls then are not counted) or before logging in
+            if logged_in and not demo_on:
+                coach.on_events(events, feedback.counters)
+                coach.on_frame(feedback.counters, drawn)
+            if not tracker.active:
+                du = logger.device_user()
+                if du:
+                    coach.on_login(du)                  # 'Hi <name>' once per 'Train on this device'
+                else:
+                    coach.on_logout()
             for arm, event in events:
                 c_ = feedback.counters[arm]
                 if c_.palm_flag_last:
@@ -397,6 +418,7 @@ def main():
     finally:
         if tracker.active:                         # program closed mid-session: still save it
             end_session(tracker.last_activity or time.time())
+        voice.close()
         if pool:
             pool.shutdown(wait=False)
         stream.stop()
