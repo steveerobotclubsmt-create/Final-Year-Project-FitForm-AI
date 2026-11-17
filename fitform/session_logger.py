@@ -118,10 +118,14 @@ class SessionLogger:
         return None
 
     def account_for(self, name_or_email):
-        """The username for a username (any capitals) or an email address, or None."""
-        key = (name_or_email or "").strip().lower()
-        for n, u in self._users().items():
-            if n.lower() == key or (u.get("email") and u["email"] == key):
+        """The username for a username (exact capitals, as at login: 'STEVE' is not 'Steve') or an email address
+        (any capitals), or None."""
+        key = (name_or_email or "").strip()
+        users = self._users()
+        if key in users:
+            return key
+        for n, u in users.items():
+            if u.get("email") and u["email"].lower() == key.lower():
                 return n
         return None
 

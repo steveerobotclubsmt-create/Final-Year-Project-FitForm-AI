@@ -568,7 +568,9 @@ def test_reset_codes_are_hashed_limited_and_expire():
         assert log.email_of("steve") == "steve@example.com"
         assert log.register("bob", "secret3", 70, "steve@example.com") == "That email is already used by another account"
         assert log.register("bob", "secret3", 70, "not-an-email") == "That email address does not look right"
-        assert log.account_for("STEVE") == "steve" and log.account_for("steve@example.com") == "steve"
+        # the username must match exactly, as at login ('STEVE' is not 'steve'); the email in any capitals
+        assert log.account_for("steve") == "steve" and log.account_for("STEVE") is None
+        assert log.account_for("Steve@Example.COM") == "steve" and log.account_for("nobody") is None
         assert log.start_reset("anna") == (None, "no email")
         code, to = log.start_reset("steve", now=1000.0)
         assert to == "steve@example.com" and len(code) == 6
