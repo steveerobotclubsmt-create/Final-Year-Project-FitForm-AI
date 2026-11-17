@@ -584,9 +584,9 @@ def test_reset_codes_are_hashed_limited_and_expire():
         assert log.finish_reset("steve", code, "newpass1", now=1710.0) is None
         assert log.check_login("steve", "newpass1") and not log.check_login("steve", "secret1")
         assert log.finish_reset("steve", code, "again123", now=1720.0) == "That code has expired - ask for a new one"
-        for k in range(3):                                                        # 5 an hour in total
-            assert log.start_reset("steve", now=1800.0 + 70 * k)[0]
-        assert log.start_reset("steve", now=2100.0) == (None, "too often")
+        for k in range(8):                                                        # no hourly limit,
+            assert log.start_reset("steve", now=1800.0 + 70 * k)[0]               # only one a minute
+        assert log.start_reset("steve", now=1800.0 + 70 * 7 + 30) == (None, "too often")
         code, _ = log.start_reset("steve", now=5000.0)
         for k in range(5):                                                        # 5 wrong tries use it up
             log.finish_reset("steve", "999999" if code != "999999" else "888888", "newpass2", now=5001.0)
@@ -606,10 +606,18 @@ def test_forgot_password_on_the_phone():
         client.get("/logout")
         assert "Forgot password?" in client.get("/").get_data(as_text=True)
         assert "Send code" in client.get("/forgot").get_data(as_text=True)
-        same = client.post("/forgot", data={"who": "nobody"}).get_data(as_text=True)
-        assert "If an account with an email matches" in same and not mail.sent   # no hint who exists
+        nobody = client.post("/forgot", data={"who": "nobody"}).get_data(as_text=True)
+        assert "This username or email is not registered." in nobody and not mail.sent
+        caps = client.post("/forgot", data={"who": "STEVE"}).get_data(as_text=True)
+        assert "is not registered" in caps and not mail.sent                        # exact capitals, as at login
         page = client.post("/forgot", data={"who": "steve@example.com"}).get_data(as_text=True)
-        assert "If an account with an email matches" in page and len(mail.sent) == 1
+        assert "A 6-digit code has been sent" in page and len(mail.sent) == 1
+        again = client.post("/forgot", data={"who": "steve"}).get_data(as_text=True)
+        assert "already sent less than a minute ago" in again and len(mail.sent) == 1   # one code a minute
+        client.post("/register", data={"username": "anna", "password": "secret2", "weight": "60"})
+        client.get("/logout")
+        no_mail = client.post("/forgot", data={"who": "anna"}).get_data(as_text=True)
+        assert "This account has no email address" in no_mail and len(mail.sent) == 1
         to, subject, body = mail.sent[0]
         assert to == "steve@example.com" and "reset" in subject.lower()
         code = code_in(body)

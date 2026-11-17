@@ -34,8 +34,7 @@ USERNAME = re.compile(r"^[A-Za-z0-9_.-]{3,20}$")
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 RESET_VALID_S = 10 * 60       # a reset code is valid for 10 minutes ...
 RESET_TRIES = 5               # ... and 5 tries
-RESET_GAP_S = 60              # at most one code a minute ...
-RESET_PER_HOUR = 5            # ... and 5 an hour per account
+RESET_GAP_S = 60              # at most one code a minute per account (no hourly limit - removed 17 Nov)
 
 
 def local_ip():
@@ -131,7 +130,7 @@ class SessionLogger:
 
     def start_reset(self, name, now=None):
         """A new 6-digit code for `name` (only its hash is stored). Returns (code, email) or (None, reason):
-        no email on the account, or asked too often (one a minute, RESET_PER_HOUR an hour)."""
+        no email on the account, or asked again within a minute."""
         from werkzeug.security import generate_password_hash
         now = now or time.time()
         with self._lock:
@@ -139,8 +138,8 @@ class SessionLogger:
             u = users.get(name)
             if not u or not u.get("email"):
                 return None, "no email"
-            sent = [t for t in (u.get("reset") or {}).get("sent", []) if now - t < 3600]
-            if sent and now - sent[-1] < RESET_GAP_S or len(sent) >= RESET_PER_HOUR:
+            sent = [t for t in (u.get("reset") or {}).get("sent", []) if now - t < RESET_GAP_S]
+            if sent:
                 return None, "too often"
             code = f"{secrets.randbelow(10 ** 6):06d}"
             u["reset"] = {"hash": generate_password_hash(code, method="pbkdf2:sha256:200000"),
@@ -356,7 +355,7 @@ device owner to reset it (tools/reset_password.py on the device).</p></div>
 email you a 6-digit code.</p><form method="post" action="/forgot">
 <label>Username or email<input name="who" value="{{ who or '' }}" autocomplete="username" required></label>
 <button>Send code</button></form></div>
-{% else %}<div class="card"><p class="ok">If an account with an email matches, a 6-digit code has been sent to it.</p>
+{% else %}<div class="card"><p class="ok">A 6-digit code has been sent to the email of this account.</p>
 <p class="muted">It is valid for 10 minutes. Check your spam folder too.</p>
 <form method="post" action="/reset"><input type="hidden" name="who" value="{{ who }}">
 <label>Code from the email<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
@@ -555,15 +554,26 @@ def create_app(logger, secret_key=None, mailer=None):
 
     @app.route("/forgot", methods=["GET", "POST"])
     def forgot():
-        """Step 1: username or email -> a 6-digit code by email. The answer is the same whether or not an account
-        matches, so the page cannot be used to find out who has an account."""
+        """Step 1: username or email -> a 6-digit code by email. Says plainly when no code can be sent (no such
+        username / email, no email on the account, asked again too soon) - the owner's choice on 17 Nov: on one
+        training device a clear answer matters more than hiding which usernames exist."""
         if request.method == "GET":
             return render_template_string(FORGOT, style=STYLE, mail_ok=mailer.configured(), stage="ask",
                                           who=request.args.get("who", ""), msg=request.args.get("msg"))
         who = request.form.get("who", "").strip()
         name = logger.account_for(who)
-        if name and mailer.configured():
+
+        def cannot(msg):
+            return render_template_string(FORGOT, style=STYLE, mail_ok=mailer.configured(), stage="ask", who=who,
+                                          msg=msg)
+        if not name:
+            return cannot("This username or email is not registered.")
+        if mailer.configured():
             code, email = logger.start_reset(name)
+            if code is None and email == "no email":
+                return cannot("This account has no email address - ask the device owner to reset the password.")
+            if code is None:
+                return cannot("A code was already sent less than a minute ago - check your email and spam folder.")
             if code:
                 try:
                     mailer.send(email, "Your FitForm password reset code",
