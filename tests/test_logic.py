@@ -698,6 +698,26 @@ def test_session_ends_when_walking_away_or_idle():
     assert t.update(40.5, True, False) is True          # standing there, no curl for > 30 s -> end
 
 
+def test_exit_button_needs_two_taps():
+    """X in the corner of the touch screen: the first tap asks 'Tap again to exit', the second closes the app;
+    a tap elsewhere or a wait of more than 3 s cancels."""
+    import numpy as np
+    from fitform.display_ui import ExitButton
+    b = ExitButton(size=56, margin=8)
+    b.draw(np.zeros((480, 800, 3), np.uint8), 0.0)
+    x0, y0, x1, y1 = b.rect
+    assert (x1, y0) == (792, 8)                          # top-right corner
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    assert b.tap(cx, cy, 1.0) is False and b.armed(1.5)  # first tap: armed, not closed
+    assert b.tap(cx, cy, 2.0) is True                    # second tap within 3 s: close
+    b2 = ExitButton(); b2.draw(np.zeros((480, 800, 3), np.uint8), 0.0)
+    cx, cy = (b2.rect[0] + b2.rect[2]) // 2, (b2.rect[1] + b2.rect[3]) // 2
+    b2.tap(cx, cy, 1.0)
+    assert b2.tap(cx, cy, 5.0) is False                  # too late: this tap only arms it again
+    b2.tap(400, 300, 5.5)                                # a tap in the picture cancels
+    assert not b2.armed(5.6) and b2.tap(cx, cy, 6.0) is False
+
+
 def test_saving_countdown_only_when_the_session_is_about_to_end():
     """'Saving session in ...' must not stay on screen while the person is there and curling (27 Oct)."""
     from fitform.session import SessionTracker

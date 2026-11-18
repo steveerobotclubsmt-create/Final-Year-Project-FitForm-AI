@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=FitForm AI
+Comment=Bicep curl trainer - camera rep counting and form feedback
+Exec=@ROOT@/tools/run_fitform.sh
+Path=@ROOT@
+Icon=@ROOT@/tools/fitform_icon.png
+Terminal=false
+Categories=Education;Sports;

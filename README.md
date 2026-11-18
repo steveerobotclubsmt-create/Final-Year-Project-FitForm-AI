@@ -134,7 +134,7 @@ Run from the project folder (on the Pi, first `source ~/fitform_env/bin/activate
 ```bash
 python main.py                    # finds the cameras by itself (see below)
 python main.py --no-side          # use one camera even if two are connected
-python main.py --camera picam --rotate 180 --side-camera 0   # choose the cameras yourself
+python main.py --camera picam --side-camera 0   # choose the cameras yourself (--rotate 180 if mounted upside down)
 python main.py --weight 65        # your body weight in kg for calories
 python main.py --video clip.mp4   # test on a recorded video
 python main.py --no-demo --no-gpio --no-server --debug
@@ -145,14 +145,20 @@ python main.py --no-position-check   # count curls without the position check fi
 ```
 Cameras are found automatically: the Raspberry Pi AI Camera is the front camera when it is connected and a
 USB webcam becomes the side camera; without the AI Camera, the USB webcam is the front camera. At least one
-camera is needed. The AI Camera picture is turned 180 degrees (it is mounted upside down) - change
-`PICAM_ROTATE` / `WEBCAM_ROTATE` in `fitform/config.py` if your mounting differs.
+camera is needed. The AI Camera is mounted upright (since 18 Nov 2026; it was upside down before, so the
+recordings from October are turned 180 degrees) - change `PICAM_ROTATE` / `WEBCAM_ROTATE` in
+`fitform/config.py` if your mounting differs.
 
 With nobody in front of it, the device shows a QR code with its address (e.g. `http://192.168.1.23:5000`).
 Scan it with a phone on the same Wi-Fi, log in or create an account, and tap **Train on this device**.
 A session ends by itself when you walk out of view for 5 s or stop curling for 30 s; the screen then shows
 the totals and your next goal, and everything is on the phone app.
+On the touch screen, tap the **X** in the top-right corner twice to close FitForm (a running session is saved).
 (With a keyboard: **Q** quits and saves, **R** resets.)
+
+Desktop icon: `bash tools/run_fitform.sh --install` puts a **FitForm AI** icon on the Pi's desktop and in the menu
+(Education). Tapping it starts FitForm full screen; it never starts a second copy, and the output goes to
+`logs/fitform_app.log`. The first time, the file manager asks what to do - choose **Execute**.
 
 Optional: `tools/fist_calibrate.py` builds a per-arm calibration of the fist-direction reading from labelled
 `--debug` runs (instructions at the top of the file). Thresholds are in `fitform/config.py`.

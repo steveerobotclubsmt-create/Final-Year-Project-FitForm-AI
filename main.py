@@ -20,7 +20,7 @@ from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
 from fitform.coach import Coach
 from fitform.display_ui import ArmSmoother, draw_arm, draw_banner, draw_debug, draw_demo, draw_hud, draw_idle, \
-    draw_position, draw_qr_corner, draw_saved, fit_to_screen
+    draw_position, draw_qr_corner, draw_saved, fit_to_screen, ExitButton
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
@@ -251,8 +251,14 @@ def main():
     # before that, the Qt window goes full screen but leaves the picture at 800x600 in the middle (27 Oct)
     fullscreen_pending = config.FULLSCREEN and not args.windowed and not args.headless
     screen, fs_frames = None, 0                 # full-screen size, measured a few frames after switching
+    exit_button, exit_tapped = ExitButton(), [False]
     if not args.headless:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)   # picture scales, keeps its shape
+
+        def on_tap(event, x, y, flags, param):     # a touch on the screen arrives as a mouse click
+            if event == cv2.EVENT_LBUTTONUP and exit_button.tap(x, y, time.time()):
+                exit_tapped[0] = True
+        cv2.setMouseCallback(window, on_tap)
 
     try:
         while not stream.finished:
@@ -471,7 +477,8 @@ def main():
                             coach.on_demo_done()
                     else:
                         draw_demo(image, el, config.DEMO_SECONDS - el + 0.5)
-                cv2.imshow(window, fit_to_screen(image, screen) if screen else image)
+                shown = fit_to_screen(image, screen) if screen else image
+                cv2.imshow(window, exit_button.draw(shown, now))      # X in the corner (beside the picture)
                 if fullscreen_pending:
                     cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
                     fullscreen_pending, fs_frames = False, 1
@@ -487,7 +494,8 @@ def main():
                         fs_frames = 0                  # window manager did not make it full screen: leave it
 
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
+                if key == ord("q") or exit_tapped[0]:      # Q, or the X tapped twice: a running session is saved
+                    print("Closed from the screen" if exit_tapped[0] else "Closed with Q")
                     break
                 if key == ord("r"):
                     feedback.reset()

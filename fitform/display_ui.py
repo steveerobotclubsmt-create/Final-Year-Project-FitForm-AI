@@ -281,6 +281,51 @@ def draw_banner(image, text, color, y=190):
     return image
 
 
+class ExitButton:
+    """X button in the top-right corner of the shown picture, for the touch screen (no keyboard to press Q).
+    Two taps exit: the first one turns it red with 'Tap again to exit' for CONFIRM_S seconds, so a stray touch
+    during a curl does not close the app."""
+    CONFIRM_S = 3.0
+
+    def __init__(self, size=56, margin=8):
+        self.size, self.margin = size, margin
+        self.rect = None              # (x0, y0, x1, y1) where it was last drawn
+        self.armed_at = None          # time of the first tap
+
+    def armed(self, now):
+        return self.armed_at is not None and now - self.armed_at < self.CONFIRM_S
+
+    def tap(self, x, y, now):
+        """A tap at (x, y) in the shown picture. Returns True when the app should close."""
+        r = self.rect
+        if r is None or not (r[0] <= x <= r[2] and r[1] <= y <= r[3]):
+            self.armed_at = None      # a tap anywhere else cancels
+            return False
+        if self.armed(now):
+            return True
+        self.armed_at = now
+        return False
+
+    def draw(self, image, now):
+        h, w = image.shape[:2]
+        s, m = self.size, self.margin
+        x0, y0 = w - s - m, m
+        self.rect = (x0, y0, x0 + s, y0 + s)
+        armed = self.armed(now)
+        cv2.rectangle(image, (x0, y0), (x0 + s, y0 + s), (0, 0, 200) if armed else (60, 60, 60), -1)
+        cv2.rectangle(image, (x0, y0), (x0 + s, y0 + s), (230, 230, 230), 2)
+        p = s // 4
+        for a, b in (((x0 + p, y0 + p), (x0 + s - p, y0 + s - p)), ((x0 + s - p, y0 + p), (x0 + p, y0 + s - p))):
+            cv2.line(image, a, b, (255, 255, 255), 4, cv2.LINE_AA)
+        if armed:
+            text = "Tap again to exit"
+            (tw, th), _ = cv2.getTextSize(text, FONT, 0.6, 2)
+            tx, ty = x0 - tw - 12, y0 + (s + th) // 2
+            cv2.rectangle(image, (tx - 6, ty - th - 8), (tx + tw + 6, ty + 8), (15, 15, 15), -1)
+            cv2.putText(image, text, (tx, ty), FONT, 0.6, (255, 255, 255), 2)
+        return image
+
+
 def fit_to_screen(image, screen):
     """Enlarges the picture to fill a full-screen window, keeping its shape (black bars at the sides or top).
     OpenCV's Qt window shows a full-screen picture at its own size in the middle, so this is done here."""

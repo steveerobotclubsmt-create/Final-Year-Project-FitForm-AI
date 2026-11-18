@@ -41,12 +41,13 @@ def labels_for(kind):
 
 
 def front_rotation(clip_dir, name):
-    """How the front clip must be turned: from <name>_info.json, else the AI Camera's mounting (older clips)."""
+    """How the front clip must be turned: from <name>_info.json, else 180 degrees - the clips from before the
+    info files (rounds 1-2, Oct 2026) were all filmed with the AI Camera mounted upside down."""
     try:
         with open(os.path.join(clip_dir, name + "_info.json")) as f:
             return ROTATE.get(json.load(f).get("rotate", 0))
     except (OSError, ValueError):
-        return ROTATE.get(config.PICAM_ROTATE)
+        return ROTATE.get(180)
 
 
 def process(path, camera, labels, arms, out_dir, name, rotate):

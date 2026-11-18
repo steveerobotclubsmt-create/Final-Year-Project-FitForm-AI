@@ -2,7 +2,8 @@
 
 # ---- Camera ----
 CAMERA_INDEX = 0            # used with --camera usb (first webcam); default --camera auto finds the cameras
-PICAM_ROTATE = 180           # Pi (AI) camera picture rotation (180 = mounted upside down); --rotate overrides
+PICAM_ROTATE = 0             # Pi (AI) camera picture rotation (180 = mounted upside down, as until 18 Nov 2026);
+                             # --rotate overrides
 WEBCAM_ROTATE = 0            # USB webcam picture rotation
                             # on the Pi, run with --camera picam to use the Pi Camera Module 2
 CAPTURE_WIDTH = 640          # 640x480 is plenty for pose detection and much faster than 1280x720 on the Pi
