@@ -678,10 +678,12 @@ def test_start_check_uses_the_end_of_the_previous_lowering():
 
 # ---------- calories + logging ----------
 def test_calories():
+    """Compendium, Unit Conversions: "METS to Kcal/min = multiply METS x 3.5 x body weight in kg then divide by 200"."""
     t = CalorieTracker(weight_kg=70, met=3.5)
     assert t.calories(100) == 0
     t.on_rep(0)
-    assert abs(t.calories(3600) - 245.0) < 1e-6
+    assert abs(t.calories(60) - 3.5 * 3.5 * 70 / 200) < 1e-9      # one minute: 4.2875 kcal
+    assert abs(t.calories(3600) - 257.25) < 1e-6                   # one hour
 
 
 def test_session_ends_when_walking_away_or_idle():
@@ -755,8 +757,8 @@ def test_summary_and_goal():
     assert s["not_counted"] == {"upper arm not pointing down": 2, "too fast": 1}
     g0 = goal_for(0, 80)
     assert (g0["sets"], g0["reps"], g0["total_reps"]) == (3, 8, 48)
-    # kcal goal = MET 3.5 x 80 kg x planned time (48 reps x 3 s + 5 rests x 60 s = 444 s)
-    assert abs(g0["kcal"] - round(3.5 * 80 * 444 / 3600, 1)) < 0.05
+    # kcal goal = MET 3.5 x 3.5 x 80 kg / 200 per minute x planned time (48 reps x 3 s + 5 rests x 60 s = 444 s)
+    assert abs(g0["kcal"] - round(3.5 * 3.5 * 80 / 200 * 444 / 60, 1)) < 0.05
     p = make_plan(s, [], 80)                              # 24 per arm >= 3x8 with 94 % counted -> step up
     assert p["met_goal"] and p["goal"]["reps"] == 10
     assert p["palm_warning"] and p["grip_warning"]

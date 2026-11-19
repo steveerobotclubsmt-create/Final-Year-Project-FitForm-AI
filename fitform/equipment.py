@@ -6,8 +6,8 @@ adds a few tens of grams, which is left out), something else (kg each) or no wei
 The weight is saved with the session, shown on the phone page and in the report, and used for the advice to
 add weight, which follows ACSM 2009, p. 690: "2-10% (lower percent for small muscle mass exercises, higher
 percent increase for large muscle mass exercises) increase in load" - the biceps are a small muscle group, so
-FitForm points to the lower end. It does not change the calories: those come from MET x body weight x time
-(see plan.py), and the Compendium value already stands for training with weights."""
+FitForm points to the lower end. It does not change the calories: those come from MET x 3.5 x body weight / 200
+per minute (see calorie_tracker.py), and the Compendium value already stands for training with weights."""
 
 KINDS = {                     # key: (name on the phone, unit, kg per unit)
     "dumbbell": ("Dumbbells", "kg", 1.0),

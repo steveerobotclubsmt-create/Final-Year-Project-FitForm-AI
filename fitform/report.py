@@ -4,8 +4,9 @@ report_data() works out the numbers (no drawing, so it is unit-tested); render_p
 ReportLab and draws the charts with Matplotlib. Used by the phone page (/report.pdf) and by
 tools/make_reports.py, which makes one report for every account that trained in a period.
 
-Calories are the same estimate as everywhere else in FitForm: MET 3.5 x body weight x active time
-(2024 Adult Compendium of Physical Activities, code 02054) - an estimate, not a measurement."""
+Calories are the same estimate as everywhere else in FitForm: MET x 3.5 x body weight / 200 per active minute
+(Compendium of Physical Activities: 3.5 MET for code 02054, formula from its Unit Conversions page) - an
+estimate, not a measurement."""
 
 import io
 import os
@@ -324,8 +325,10 @@ def render_pdf(d):
                         f"per session.{goal_part} Your best session was {_day(best['when'])} "
                         f"({best['kcal']:.1f} kcal in {_fmt_time(best['active_s'])}).", st["p"]),
               Spacer(1, 4), chart("kcal"),
-              Paragraph(f"Estimate: MET {config.MET_BICEP_CURL} x body weight x active time (from the first to the "
-                        "last curl of each session). Real energy use differs from person to person.", st["small"])]
+              Paragraph(f"Estimate: kcal per minute = MET {config.MET_BICEP_CURL} x 3.5 x body weight (kg) / 200, "
+                        "over the active time (from the first to the last curl of each session). Formula and MET "
+                        "from the Compendium of Physical Activities (2024; pacompendium.com, Unit Conversions). "
+                        "Real energy use differs from person to person.", st["small"])]
 
     # ---- reps and form
     r, l = d["reps_right"], d["reps_left"]

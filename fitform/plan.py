@@ -12,9 +12,11 @@ Every rule below was checked against the source's own text on 16 Nov 2026 (quote
   Rest      : ACSM 2009, p. 692: "For assistance exercises (those exercises complimentary to core exercises),
               a shorter rest period length of 1-2 min may suffice".
   Frequency : WHO 2020, Table 4: "on 2 or more days a week".
-  kcal      : 2024 Adult Compendium, code 02054 = 3.5 MET. The paper defines 1 MET as "a standardized RMR of
-              3.5 mL/kg/min or approximately 1.0 kcal/kg/h", so kcal = MET x body weight (kg) x hours. It does
-              not print that formula itself, and it notes the values do "not reflect precise individual EE values".
+  kcal      : 2024 Adult Compendium, code 02054 = 3.5 MET. Formula from the Compendium website (Unit
+              Conversions, https://pacompendium.com/unite-conversions/): "METS to Kcal/min = multiply METS x 3.5
+              x body weight in kg then divide by 200" - the paper (section 2.5) says "Additional equations used to
+              convert EE values are available on the Compendium website". It notes the values do "not reflect
+              precise individual EE values".
 
 The goal climbs a ladder 3x8 -> 3x10 -> 3x12 reps per arm; after two sessions in a row at 3x12 with good
 form it advises a small weight increase and starts again at 3x8. General guidance, not coaching."""
@@ -23,6 +25,7 @@ from datetime import datetime, timedelta
 
 from . import config
 from .bicep_curl import FIX_TEXT
+from .calorie_tracker import kcal_from_met
 from .equipment import label, next_load_advice
 
 LADDER = [(3, 8), (3, 10), (3, 12)]     # (sets, reps per set) per arm
@@ -50,16 +53,18 @@ SOURCES = [
     "2 or more days a week\".",
     "Calories - Herrmann et al. (2024). 2024 Adult Compendium of Physical Activities. J Sport Health Sci "
     "13(1):6-12, doi:10.1016/j.jshs.2023.10.010. Code 02054, 3.5 MET: \"Resistance (weight) training, multiple "
-    "exercises, 8-15 reps at varied resistance\". 1 MET = \"a standardized RMR of 3.5 mL/kg/min or approximately "
-    "1.0 kcal/kg/h\", so kcal = MET x body weight (kg) x hours (FitForm's working; the paper does not print this "
-    "formula). The paper notes the values do \"not reflect precise individual EE values\".",
+    "exercises, 8-15 reps at varied resistance\". Formula: \"METS to Kcal/min = multiply METS x 3.5 x body weight "
+    "in kg then divide by 200\" (Compendium of Physical Activities website, Unit Conversions, "
+    "https://pacompendium.com/unite-conversions/ - the paper: \"Additional equations used to convert EE values are "
+    "available on the Compendium website\"). The paper notes the values do \"not reflect precise individual EE "
+    "values\".",
 ]
 
 
 def goal_for(step, weight_kg):
     sets, reps = LADDER[step]
     planned_s = 2 * sets * reps * SEC_PER_REP + (2 * sets - 1) * REST_S     # both arms, rests in between
-    kcal = config.MET_BICEP_CURL * weight_kg * planned_s / 3600.0
+    kcal = kcal_from_met(config.MET_BICEP_CURL, weight_kg, planned_s)
     return {"step": step, "sets": sets, "reps": reps, "reps_per_arm": sets * reps,
             "total_reps": 2 * sets * reps, "kcal": round(kcal, 1), "minutes": round(planned_s / 60.0, 1)}
 

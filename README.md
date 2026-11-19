@@ -29,13 +29,13 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
   flip the screen
 - Camera watchdog: if the Pi camera sends no picture for 3 s (seen when the Pi was hot and throttled), it is restarted by itself
 - Accounts on the phone app (username + password, email, body weight). Until someone logs in, the device shows a big QR code (also with a person in view - nothing starts before a login anyway): scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Curls only count after logging in (`REQUIRE_LOGIN` in `fitform/config.py`; not needed with `--no-server` or `--video`)
-- "What will you lift?" after **Train on this device**: dumbbells (kg each), water bottles (litres each; water is about 1 kg per litre), something else (kg each) or no weight - pre-filled with the last answer. The weight is saved with the session and shown on the phone page, in the history and in the report, and the advice to add weight uses it: 2-10 %, the lower end for the biceps (ACSM 2009, p. 690), e.g. "from 0.5 kg to about 0.51-0.55 kg". Choosing "no weight" also stops the "No weight in your hand?" card. Calories are not changed by it: they come from MET x body weight x time (see "Where the goals come from")
+- "What will you lift?" after **Train on this device**: dumbbells (kg each), water bottles (litres each; water is about 1 kg per litre), something else (kg each) or no weight - pre-filled with the last answer. The weight is saved with the session and shown on the phone page, in the history and in the report, and the advice to add weight uses it: 2-10 %, the lower end for the biceps (ACSM 2009, p. 690), e.g. "from 0.5 kg to about 0.51-0.55 kg". Choosing "no weight" also stops the "No weight in your hand?" card. Calories are not changed by it: they come from MET x 3.5 x body weight / 200 per minute (see "Where the goals come from")
 - Forgot password: the phone page emails a 6-digit code (valid 10 minutes, 5 tries, at most one a minute; only its hash is stored). The username must have the exact capitals, as at login; an unknown username or email shows "This username or email is not registered.". The sending account is set up once with `tools/setup_email.py`. Accounts made before emails were asked add one under Settings (needs the password). On the device itself `tools/reset_password.py` still works
 - Phone app dashboard: next session goal (sets x reps per arm, kcal, minutes), sessions this week, calories per session against each session's goal, last session, why curls were not counted, history, CSV download
 - Goals from published guidelines (see "Where the goals come from")
 - Fist direction and grip (hand not clenched) are advisory (see Known limitations): the rep still counts, and the app shows a warning with pictures from the cameras when it happened in 2 or more reps
 - Green/red LED form indicator and buzzer (Raspberry Pi GPIO)
-- Calorie estimate: MET x body weight x active time (from the first to the last curl)
+- Calorie estimate: MET x 3.5 x body weight / 200 per active minute (from the first to the last curl) - the formula printed by the Compendium of Physical Activities
 - Session log: CSV (`logs/sessions.csv`) plus a detailed history (`logs/sessions.jsonl`). A session in which no
   rep was counted (only rejected curls: 0 reps, 0 kcal) is not saved and does not count anywhere - history,
   goals, "this week" or reports; the voice says "No reps were counted, so this session was not saved."
@@ -154,6 +154,7 @@ Scan it with a phone on the same Wi-Fi, log in or create an account, and tap **T
 A session ends by itself when you walk out of view for 5 s or stop curling for 30 s; the screen then shows
 the totals and your next goal, and everything is on the phone app.
 On the touch screen, tap the **X** in the top-right corner twice to close FitForm (a running session is saved).
+
 (With a keyboard: **Q** quits and saves, **R** resets.)
 
 Desktop icon: `bash tools/run_fitform.sh --install` puts a **FitForm AI** icon on the Pi's desktop and in the menu
@@ -299,12 +300,13 @@ Each rule was checked against the source's own text (16 Nov 2026); the quotes be
 | Add 2-10 % weight (lower end for the biceps) | "2–10% (lower percent for small muscle mass exercises, higher percent increase for large muscle mass exercises) increase in load be applied when the individual can perform the current workload for one to two repetitions over the desired number on two consecutive training sessions" | ACSM 2009, p. 690 |
 | At least 2 training days a week | "muscle-strengthening activities at moderate or greater intensity that involve all major muscle groups on 2 or more days a week" | WHO 2020, Table 4 |
 | 3.5 MET | code 02054, 3.5 MET: "Resistance (weight) training, multiple exercises, 8-15 reps at varied resistance" | Compendium 2024 |
-| kcal = MET x body weight (kg) x hours | 1 MET = "a standardized RMR of 3.5 mL/kg/min or approximately 1.0 kcal/kg/h" | Compendium 2024 |
+| kcal per minute = MET x 3.5 x body weight (kg) / 200 | "METS to Kcal/min = multiply METS x 3.5 x body weight in kg then divide by 200" | Compendium website, Unit Conversions |
 
 Notes, so nothing is claimed that the sources do not say:
 - The step up the ladder (3x8 -> 3x10 -> 3x12, a step when the goal is reached with at least 85 % of curls
   counted; a weight increase after 3x12 on two sessions in a row) is FitForm's adaptation of the 2009 rule.
-- The Compendium paper does not print the kcal formula; it follows from its MET definition above. The paper
+- The kcal formula is printed on the Compendium's website, not in the paper; the paper (section 2.5) says
+  "Additional equations used to convert EE values are available on the Compendium website". The paper
   itself notes the values do "not reflect precise individual EE values", so calories are an estimate.
 - The 2026 ACSM update also says "progression is not necessary to achieve beneficial outcomes": the ladder is
   for people who want to keep progressing.
@@ -320,6 +322,8 @@ Sources:
   behaviour. *Br J Sports Med* 54(24):1451-1462. doi:10.1136/bjsports-2020-102955
 - Herrmann SD, et al. (2024). 2024 Adult Compendium of Physical Activities: a third update of the energy costs
   of human activities. *J Sport Health Sci* 13(1):6-12. doi:10.1016/j.jshs.2023.10.010
+- Compendium of Physical Activities. Unit Conversions. https://pacompendium.com/unite-conversions/ (accessed
+  19 Nov 2026) - the website of the 2024 Adult Compendium
 
 ## Known limitations
 - **Fist direction (turned outward vs. facing the body)** cannot be detected reliably. Tested with one camera,
