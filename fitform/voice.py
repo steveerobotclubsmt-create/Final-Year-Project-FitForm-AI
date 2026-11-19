@@ -48,6 +48,7 @@ class Voice:
         self.spoken = []                  # everything said, oldest first (for tests and --debug)
         self._synth, self._play = synth, play
         self._piper = None
+        self.muted = False                # 'No speaker (text only)' chosen in the speaker settings
         self.ready = False
         if not enabled:
             return
@@ -79,7 +80,7 @@ class Voice:
     # ---------- what the app calls ----------
     def say(self, text, prio, key=None, cooldown=0.0, ttl=None):
         """Queue `text`. Returns True if it was accepted (it can still be dropped later if it waits too long)."""
-        if not self.ready or not text:
+        if not self.ready or not text or self.muted:
             return False
         now = self.clock()
         with self._cond:

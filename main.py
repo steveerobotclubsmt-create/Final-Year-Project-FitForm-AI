@@ -31,6 +31,8 @@ from fitform.position import ADVICE, DriftWatch, PositionGate, check_position
 from fitform.session import SessionTracker, curls_allowed, nobody_there
 from fitform.session_logger import SessionLogger, local_ip, start_server
 from fitform.session_summary import build_summary, counts_as_session, print_summary
+from fitform.speaker import Speakers
+from fitform.speaker_ui import SpeakerMenu
 from fitform.voice import Voice
 
 
@@ -133,6 +135,11 @@ def main():
         start_server(logger)
     voice = Voice(enabled=config.VOICE_ENABLED and not args.no_voice)
     coach = Coach(voice)
+    speakers = Speakers(config.LOG_DIR)
+    speakers.restore()                          # reconnect the speaker chosen last time (in the background)
+    speaker_menu = SpeakerMenu(speakers, voice)   # 'No speaker' chosen last time: the voice stays muted
+    if speakers.muted():
+        print("Voice muted: 'No speaker (text only)' is chosen in the speaker settings")
     if voice.ready:
         voice.prepare(coach.phrases())
         print(f"Voice: {os.path.basename(config.VOICE_MODEL)} (rep count {'on' if config.VOICE_COUNT_REPS else 'off'}, "
@@ -256,7 +263,9 @@ def main():
         cv2.namedWindow(window, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)   # picture scales, keeps its shape
 
         def on_tap(event, x, y, flags, param):     # a touch on the screen arrives as a mouse click
-            if event == cv2.EVENT_LBUTTONUP and exit_button.tap(x, y, time.time()):
+            if event != cv2.EVENT_LBUTTONUP or speaker_menu.tap(x, y):    # speaker settings first
+                return
+            if not speaker_menu.is_open and exit_button.tap(x, y, time.time()):
                 exit_tapped[0] = True
         cv2.setMouseCallback(window, on_tap)
 
@@ -312,7 +321,7 @@ def main():
             # position check: before the first rep the person must stand where the camera can judge their curls
             pos = check_position(landmarks.landmark) if (gate and landmarks is not None) else None
             drift_key = None
-            if gate and session_tag is None and logged_in and not demo_on:
+            if gate and session_tag is None and logged_in and not demo_on and not speaker_menu.is_open:
                 if gate.update(pos, now):
                     if demo_allowed:                        # position good: now show how to do a curl
                         print("[POSITION] good - showing the curl guide")
@@ -330,7 +339,7 @@ def main():
                     coach.on_position_drift(drift_key, ADVICE[drift_key])
             positioned = gate is None or gate.passed or session_tag is not None
             # not logged in, not in position yet, or the curl guide is showing: curls are not counted or saved
-            if events and (demo_on or not (logged_in and positioned)):
+            if events and (demo_on or speaker_menu.is_open or not (logged_in and positioned)):
                 feedback.reset()
                 calories.reset()
                 events = []
@@ -478,7 +487,12 @@ def main():
                     else:
                         draw_demo(image, el, config.DEMO_SECONDS - el + 0.5)
                 shown = fit_to_screen(image, screen) if screen else image
-                cv2.imshow(window, exit_button.draw(shown, now))      # X in the corner (beside the picture)
+                if speaker_menu.is_open:                # speaker settings fill the screen (they have 'Close')
+                    speaker_menu.draw(shown)
+                else:                                   # [Speaker] only between sessions, then the X
+                    speaker_menu.draw(shown, allowed=not tracker.active)
+                    exit_button.draw(shown, now)
+                cv2.imshow(window, shown)
                 if fullscreen_pending:
                     cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
                     fullscreen_pending, fs_frames = False, 1

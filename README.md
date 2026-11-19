@@ -155,6 +155,11 @@ A session ends by itself when you walk out of view for 5 s or stop curling for 3
 the totals and your next goal, and everything is on the phone app.
 On the touch screen, tap the **X** in the top-right corner twice to close FitForm (a running session is saved).
 
+Speaker for the spoken feedback: tap **Speaker** (top right, between sessions). Any Bluetooth speaker works -
+**Find new speaker**, put the speaker in pairing mode, tap its name; a PIN keypad appears only if the speaker asks
+for one (usually 0000). Already paired speakers and other outputs (e.g. HDMI) are listed to switch between, or
+**No speaker (text only)** mutes the voice. **Test sound** checks it. The choice is kept in `logs/speaker.json` and
+the speaker is reconnected when FitForm starts (`fitform/speaker.py`, screens in `fitform/speaker_ui.py`).
 (With a keyboard: **Q** quits and saves, **R** resets.)
 
 Desktop icon: `bash tools/run_fitform.sh --install` puts a **FitForm AI** icon on the Pi's desktop and in the menu
