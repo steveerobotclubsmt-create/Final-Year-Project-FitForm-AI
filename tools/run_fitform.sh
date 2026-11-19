@@ -20,4 +20,6 @@ if pgrep -f "fitform_env/bin/python main.py" > /dev/null; then
 fi
 mkdir -p logs
 echo "=== started $(date '+%Y-%m-%d %H:%M:%S') ===" >> logs/fitform_app.log
+# unbuffered: each line reaches the log at once (else Python writes it in blocks, minutes late)
+export PYTHONUNBUFFERED=1
 exec "$HOME/fitform_env/bin/python" main.py >> logs/fitform_app.log 2>&1
