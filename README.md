@@ -2,17 +2,17 @@
 
 **Project videos:** see [VIDEOS.md](VIDEOS.md)
 
-Project documents (Gantt chart, figures): [docs/](docs/README.md)
+Project documents (Gantt chart, figures, photos, phone app screenshots): [docs/](docs/README.md)
 
 Individual Major Project (6FTC2062), BEng Robotics and Artificial Intelligence, University of Hertfordshire.
 
-FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count bicep curl repetitions and check exercise form in real time. It gives feedback through an on-screen overlay, green/red LEDs and a buzzer, and logs each session to a CSV file that can be downloaded over Wi-Fi.
+FitForm AI runs MediaPipe Pose and Hands (pre-trained CNNs), its own fine-tuned CNN (MobileNetV3-Small, "weight in hand?") and OpenCV on a Raspberry Pi 5 with the Raspberry Pi AI Camera, all offline. It counts bicep curl repetitions per arm and checks exercise form in real time, gives feedback on a 7-inch touch display (green/red form status, why a curl was not counted and how to fix it) and through spoken feedback on a Bluetooth speaker, and saves every session to the user's account. On a phone on the same Wi-Fi, the user logs in with a QR code and sees the session summary, a calorie chart, a goal for the next session and a personalised PDF report. Everything runs in a 3D-printed chassis.
 
 ## Features
-- Real-time pose detection (MediaPipe Pose + OpenCV), 2D joint angles
-- Rep counting per arm. A rep only counts if it starts from a straight arm, the upper arm points down and stays by the side, the hand grips the weight (fist, or fingers round a bottle / dumbbell), the wrist stays straight, the lift is neither too fast nor too slow and the arm is not dropped back down too fast. The lift and the lowering are timed from the wrist's height, and a rep counts once the arm is back down
+- Real-time pose detection (MediaPipe Pose + Hands, OpenCV); joint angles from MediaPipe's 3D world landmarks when available, otherwise the 2D image points
+- Rep counting per arm. A rep only counts if it starts from a straight arm, the upper arm points down and stays by the side, the wrist stays straight, the lift is neither too fast nor too slow and the arm is not dropped back down too fast. The lift and the lowering are timed from the wrist's height, and a rep counts once the arm is back down
 - Weight-in-hand check (CNN): a small neural network (MobileNetV3-Small, fine-tuned on hand pictures from labelled clips) looks at each hand on the front camera and decides "holding a weight" or "empty hand", once per rep. It is advice only: when it happened in 2 or more reps, the phone page shows a "No weight in your hand?" card with pictures. See "Weight-in-hand CNN" below
-- Two cameras: Raspberry Pi AI Camera in front (counting) + USB webcam at the side (`--side-camera 0`); either camera can confirm the grip
+- One camera in the final build: the Raspberry Pi AI Camera in front. A second USB webcam at the side (`--side-camera 0`) was built and tested but is not used: with its 1 m cable it could not be placed at a good distance for a side view (it missed the left hand), and with the CNN two cameras ran at only 8-10 FPS (28 Oct demo video) against about 15 FPS with one. The option is still in the code
 - When a curl is not counted, the screen shows why and what to do (e.g. "Keep your upper arm pointing down"), with a short pause before the next rep
 - Spoken feedback (offline Piper voice): the rep count, why a rep was not counted and what to do, live arm warnings during the lift, a greeting after logging in and the session result with calories burned. Only feedback the system is reliable at is spoken - the hand checks are not - and it never repeats itself or talks over itself. See "Spoken feedback" below
 - Personalised training report (PDF) for any period: calories burned, reps, form, training days, what to work on and progress, downloaded from the phone page or made for every active account with `tools/make_reports.py`. See "Training report" below
@@ -33,12 +33,24 @@ FitForm AI uses a camera, MediaPipe Pose and OpenCV on a Raspberry Pi 5 to count
 - Forgot password: the phone page emails a 6-digit code (valid 10 minutes, 5 tries, at most one a minute; only its hash is stored). The username must have the exact capitals, as at login; an unknown username or email shows "This username or email is not registered.". The sending account is set up once with `tools/setup_email.py`. Accounts made before emails were asked add one under Settings (needs the password). On the device itself `tools/reset_password.py` still works
 - Phone app dashboard: next session goal (sets x reps per arm, kcal, minutes), sessions this week, calories per session against each session's goal, last session, why curls were not counted, history, CSV download
 - Goals from published guidelines (see "Where the goals come from")
-- Fist direction and grip (hand not clenched) are advisory (see Known limitations): the rep still counts, and the app shows a warning with pictures from the cameras when it happened in 2 or more reps
-- Green/red LED form indicator and buzzer (Raspberry Pi GPIO)
+- Fist direction and grip (hand not clenched) are advisory (see Known limitations, `FIST_REJECTS = False`): the rep still counts, and the app shows a warning with pictures from the camera when it happened in 2 or more reps
+- Green/red form status on the touch display and spoken feedback through a Bluetooth speaker. These replaced the green/red LEDs and buzzer planned at the start: the display is already in front of the user, and a voice can say why a curl was not counted, which a beep cannot. `fitform/gpio_feedback.py` is still in the code (nothing is wired to it; `--no-gpio` turns it off)
 - Calorie estimate: MET x 3.5 x body weight / 200 per active minute (from the first to the last curl) - the formula printed by the Compendium of Physical Activities
 - Session log: CSV (`logs/sessions.csv`) plus a detailed history (`logs/sessions.jsonl`). A session in which no
   rep was counted (only rejected curls: 0 reps, 0 kcal) is not saved and does not count anywhere - history,
   goals, "this week" or reports; the voice says "No reps were counted, so this session was not saved."
+
+## Hardware (final build)
+| Part | Details |
+|---|---|
+| Raspberry Pi 5 (8 GB) | runs everything; Raspberry Pi OS Trixie, 64 GB microSD |
+| Raspberry Pi AI Camera (Sony IMX500) | front camera, CSI ribbon cable, mounted upright at the top of the chassis |
+| 7-inch touch display | DSI ribbon cable; live view, count, form status, QR code and touch settings (speaker, X to close) |
+| Bluetooth speaker | outside the chassis, paired from the touch screen; spoken feedback |
+| Official Raspberry Pi 27 W USB-C power supply | 5.1 V, 5 A |
+| 3D-printed chassis | designed in Fusion 360, printed in PLA on a Bambu Lab X1 Carbon (main body 13 h 40 min with supports, about 392 g); carry handle, front frame around the display, vents |
+
+Block diagram, photos and the chassis CAD model: [docs/](docs/README.md). Nothing is wired to the GPIO pins.
 
 ## Project structure
 ```
@@ -58,7 +70,10 @@ fitform-ai/
 │   ├── hold_check.py        # weight-in-hand CNN: cuts the hand picture and runs the model (OpenCV DNN)
 │   ├── feedback_engine.py   # runs the rep counters and chooses the feedback text
 │   ├── display_ui.py        # on-screen overlay, demo, QR code and 'session saved' screens
-│   ├── gpio_feedback.py     # LEDs + buzzer (auto-disabled on a laptop)
+│   ├── position.py          # position check before the first rep
+│   ├── speaker.py           # Bluetooth speaker: pairing, reconnecting, test sound
+│   ├── speaker_ui.py        # speaker settings screens on the touch display
+│   ├── gpio_feedback.py     # LEDs + buzzer from the original plan (not wired in the final build)
 │   ├── calorie_tracker.py   # MET-based calorie estimate
 │   ├── session.py           # ends a session when the user walks away or stops
 │   ├── session_summary.py   # end-of-session totals
@@ -83,17 +98,22 @@ fitform-ai/
 │   ├── setup_voice.py       # downloads the voice, prepares the spoken phrases, tests the speaker
 │   ├── setup_email.py       # sets up the email account for password-reset codes (sends a test email)
 │   ├── make_reports.py      # PDF report for every account that trained in a period
-│   └── reset_password.py    # sets a new password for an account
+│   ├── reset_password.py    # sets a new password for an account
+│   ├── run_fitform.sh       # desktop launcher (--install adds the FitForm AI icon)
+│   ├── fitform.desktop      # desktop / menu entry for the launcher
+│   └── fitform_icon.png     # icon for the launcher
 ├── prototypes/
 │   └── bicep_curl_single_camera.py   # original single-file laptop prototype
 ├── docs/
 │   ├── README.md            # list of the project documents
 │   ├── gantt/               # Gantt chart (Excel, PDF, picture)
-│   ├── figures/             # block diagrams and figures for the logbooks/report
-│   └── photos/              # photos of the hardware and parts
+│   ├── figures/             # block diagram, CNN results, two-camera test, chassis CAD model
+│   ├── photos/              # photos of the parts and the finished device
+│   └── website/             # screenshots of the phone app and an example PDF report
 ├── tests/
 │   ├── test_logic.py        # tests for counting, goals, accounts and the app (no camera needed)
-│   └── test_voice_report.py # tests for the spoken feedback and the training report
+│   ├── test_voice_report.py # tests for the spoken feedback and the training report
+│   └── test_speaker.py      # tests for the speaker settings
 ├── logs/                    # sessions, accounts, hand pictures, clips and training crops (not uploaded to GitHub)
 └── requirements.txt
 ```
@@ -121,12 +141,12 @@ uv pip install -r requirements.txt
 python tools/setup_voice.py       # once: downloads the voice (63 MB) and prepares the spoken phrases
 python tools/setup_email.py       # once: email account for password-reset codes (e.g. Gmail + app password)
 ```
-The Pi Camera Module is read through the `rpicam-vid` command (`--camera picam`), so Picamera2 is not needed inside the environment. A USB webcam uses `--camera 0`.
+The AI Camera is read through the `rpicam-vid` command (`--camera picam`), so Picamera2 is not needed inside the environment. A USB webcam uses `--camera 0`.
 
 Check the install:
 ```bash
 python -c "import mediapipe as mp, cv2; mp.solutions.pose.Pose(); print('MediaPipe', mp.__version__, 'OpenCV', cv2.__version__)"
-rpicam-hello --list-cameras     # Pi Camera Module detected?
+rpicam-hello --list-cameras     # AI Camera detected?
 ```
 
 ## Usage
@@ -174,9 +194,11 @@ Optional: `tools/fist_calibrate.py` builds a per-arm calibration of the fist-dir
   view. MediaPipe Pose finds a person far more reliably with the head in the picture: in a recording with the head
   cut off (15 Nov) it found the person in 40 % of pictures, against 69 % with the face visible; when it loses you,
   the arm drawing jumps and the counting pauses.
-- Keep the Pi cool (a fan, e.g. the Raspberry Pi 5 Active Cooler). Without one it reached 95 C on 15 Nov and
-  slowed its CPU to 1.0 GHz, and FitForm dropped from about 15 to 7-9 FPS.
-- Side webcam: level with your hip, as close to 90 degrees from the front as the cable allows.
+- Keep the chassis vents clear. The final build has no fan and normally runs at about 15 FPS, but during one
+  long session on 15 Nov the Pi reached 95 C, slowed its CPU to 1.0 GHz and FitForm dropped to 7-9 FPS; for long
+  sessions a fan (e.g. the Raspberry Pi 5 Active Cooler) helps.
+- Optional side webcam (not used in the final build): level with your hip, as close to 90 degrees from the front
+  as the cable allows.
 - Good, even lighting; avoid a bright window behind you.
 
 Other addresses: `http://<pi-ip>:5000/sessions` (JSON), `http://<pi-ip>:5000/sessions.csv` (download).
@@ -241,8 +263,9 @@ when too close. On 8 good clips the check passed after exactly 1.0 s and the cou
 model sometimes invents a face, so "Head in view" alone can be fooled; the other checks and the 1 s hold catch it.
 
 ## Spoken feedback
-FitForm speaks through any speaker the Pi plays sound on (USB speaker, Bluetooth speaker or a monitor with
-speakers over HDMI - the Pi 5 has no headphone socket). The voice is [Piper](https://github.com/rhasspy/piper),
+In the final build FitForm speaks through a Bluetooth speaker placed outside the chassis and paired from the touch
+screen (the DSI touch display has no speakers and the Pi 5 has no headphone socket). A USB speaker or an HDMI
+monitor with speakers also works. The voice is [Piper](https://github.com/rhasspy/piper),
 a neural text-to-speech model that runs offline on the Pi's CPU (`en_GB-cori-medium` by default,
 `VOICE_MODEL` in `fitform/config.py`). Set it up once with `python tools/setup_voice.py`; it downloads the voice,
 prepares the fixed phrases (about 20 s) and plays a test sentence.
@@ -345,12 +368,19 @@ Sources:
 - **Correct curls are counted reliably; wrong ones less so** - the arm checks (upper arm, elbow, tempo,
   extension) catch bad reps well, the hand checks less consistently.
 - Calories are an estimate (MET formula), not a measurement. The plan is general guidance, not coaching.
-- Frame rate on the Pi 5 is about 13-16 FPS with two cameras, so very fast reps can be timed less accurately.
+- Frame rate on the Pi 5 is about 15 FPS with one camera (8-10 FPS with two cameras and the CNN), so very fast
+  reps can be timed less accurately.
+- **Testing:** the author's own sessions were screen-recorded and checked; the supervisor and a volunteer also
+  tried the prototype, but their sessions were not recorded, so there is no exact accuracy figure for other people.
 - **Spoken rep numbers can be skipped** when both arms finish reps in quick succession: a number that cannot
   be said before the next rep is dropped rather than said late (by design - no clashes, no out-of-date counts).
   The screen always shows the count.
 
-## Wiring (default BCM pins, change in `fitform/config.py`)
+## Wiring
+Nothing is wired to the GPIO pins in the final build: the AI Camera (CSI ribbon) and the touch display (DSI ribbon)
+plug into the Pi, and the speaker connects by Bluetooth. The LEDs and buzzer from the original plan can still be
+connected (default BCM pins below, change in `fitform/config.py`):
+
 | Component | GPIO pin | Notes |
 |---|---|---|
 | Green LED | GPIO 17 | via 220-330 Ω resistor to GND |
@@ -358,13 +388,16 @@ Sources:
 | Buzzer (active, 5V/3.3V) | GPIO 22 | other leg to GND |
 
 ## Tests
+126 tests, no camera needed:
 ```bash
-python tests/test_logic.py
-python tests/test_voice_report.py
+python tests/test_logic.py         # 72: counting, goals, accounts, the app
+python tests/test_voice_report.py  # 45: spoken feedback and the training report
+python tests/test_speaker.py       # 9: speaker settings
 ```
 
 ## Tested versions
-mediapipe 0.10.21, opencv-python 4.11.0.86, numpy 1.26, Python 3.10-3.12.
+Raspberry Pi 5: mediapipe 0.10.18, Python 3.12, opencv-python 4.11.0.86, numpy 1.26.
+Laptop: mediapipe 0.10.21, Python 3.10-3.12 (both pinned in `requirements.txt`).
 MediaPipe 1.0+ removed the `mp.solutions.pose` API this project uses, so keep the version pinned.
 
 ## Privacy
