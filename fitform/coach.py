@@ -82,7 +82,12 @@ class Coach:
                 text = f"Both arms. {text}"
             else:
                 text = f"{arm.capitalize()}. {text}"
-            self.voice.say(text, REJECT, key=("fix", c.reject_key) if fix else None, ttl=REJECT_TTL)
+            # the other arm's curl counted in the same moment: its number first, joined from ready-made sentences
+            # (22 Nov: only 'Left. Not counted...' was said and 'Right, 21' was never heard)
+            counted = [f"{a.capitalize()}, {counters[a].count}" for a, ev in events if ev == "counted"]
+            parts = counted + [text] if counted and config.VOICE_COUNT_REPS else None
+            self.voice.say(". ".join(parts) if parts else text, REJECT,
+                           key=("fix", c.reject_key) if fix else None, ttl=REJECT_TTL, parts=parts)
             return
         if not config.VOICE_COUNT_REPS:
             return

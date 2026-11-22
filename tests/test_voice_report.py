@@ -247,7 +247,7 @@ def test_rejection_wins_over_a_count_in_the_same_frame():
     c = Coach(v, clock=clock)
     c.on_events([("right", "counted"), ("left", "rejected")],
                 counters(right=counter(count=4), left=counter(reject_key="fast")))
-    assert said(v) == "Left. Not counted. Lift a little slower."
+    assert said(v) == "Right, 4. Left. Not counted. Lift a little slower."   # both: the number is not lost
 
 
 def test_both_arms_rejected_together_is_one_sentence():
