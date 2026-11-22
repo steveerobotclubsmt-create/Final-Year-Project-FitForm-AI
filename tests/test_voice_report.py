@@ -659,6 +659,10 @@ def test_chime_before_a_sentence_after_quiet():
     assert frames[-1000:] == b"\x00\x10" * 500                    # the sentence itself is unchanged
     assert any(frames[i:i + 2] != b"\x00\x00" for i in range(0, 600, 2))   # a sound before it
     assert config.VOICE_CHIME and config.VOICE_CHIME_AFTER_SECONDS == 1.0
+    from fitform.voice import chime_speaker
+    assert chime_speaker("MT") and chime_speaker("mt")              # tested: needs it
+    assert not chime_speaker("G733 Gaming Headset Analog Stereo")   # tested: does not
+    assert not chime_speaker("Other speaker") and not chime_speaker("")   # untested speakers: no chime
 
 
 def test_sets_and_rest_are_spoken():
