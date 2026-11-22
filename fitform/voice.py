@@ -199,8 +199,9 @@ class Voice:
         syn = SynthesisConfig(volume=config.VOICE_VOLUME, length_scale=1.0 / max(0.5, config.VOICE_SPEED))
         return voice, syn
 
-    def _piper_synth(self, text):
-        h = hashlib.sha1(f"{text}|{config.VOICE_VOLUME}|{config.VOICE_SPEED}".encode()).hexdigest()[:16]
+    def _piper_synth(self, text, lead_in=None):
+        lead_in = config.VOICE_LEAD_IN_SECONDS if lead_in is None else lead_in
+        h = hashlib.sha1(f"{text}|{config.VOICE_VOLUME}|{config.VOICE_SPEED}|{lead_in}".encode()).hexdigest()[:16]
         path = os.path.join(self._cache, h + ".wav")
         if os.path.exists(path):
             return path
@@ -211,6 +212,8 @@ class Voice:
             tmp = f"{path}.{threading.get_ident()}.tmp"
             with wave.open(tmp, "wb") as w:
                 voice.synthesize_wav(text, w, syn_config=syn)
+        if lead_in > 0:
+            add_lead_in(tmp, lead_in)
         os.replace(tmp, path)
         return path
 
@@ -230,6 +233,18 @@ class Voice:
 
 
 _synth_lock = threading.Lock()
+
+
+def add_lead_in(path, seconds):
+    """Puts `seconds` of silence before the sound in the WAV file `path`. A Bluetooth speaker that has been quiet
+    goes into power-saving and swallows the first fraction of a second of the next sound - on 22 Nov the first
+    word, 'Right' or 'Left', was cut off; it now wakes up during the silence instead."""
+    with wave.open(path, "rb") as r:
+        params, frames = r.getparams(), r.readframes(r.getnframes())
+    silence = b"\x00" * (int(params.framerate * seconds) * params.sampwidth * params.nchannels)
+    with wave.open(path, "wb") as w:
+        w.setparams(params)
+        w.writeframes(silence + frames)
 
 
 def _low_priority():

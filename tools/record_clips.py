@@ -23,6 +23,7 @@ sys.path.insert(0, ROOT)
 from fitform import config                           # noqa: E402
 from fitform.camera_detect import detect             # noqa: E402
 from fitform.camera_thread import CameraStream, _RpicamCapture   # noqa: E402
+from fitform.display_ui import fit_to_screen          # noqa: E402
 
 INSTRUCTIONS = {
     "slow": "SLOW, PROPER curls: about 2 s up, 2-3 s down. Both arms one after the other.",
@@ -33,6 +34,10 @@ INSTRUCTIONS = {
     "bottleL": "BOTTLE held FLAT like a dumbbell, in the LEFT hand. Normal curls; turn it a little now and then.",
     "fist": "EMPTY hands, CLENCHED fists. Normal curls, both arms.",
     "open": "EMPTY hands, OPEN or relaxed. Normal curls, both arms.",
+    # timing with the hand coming to the middle (forearm towards the camera) - 22 Nov test
+    "middle": "MIDDLE, SLOW: hands come to the middle of your body. About 1 s up, 1-2 s down. Both arms.",
+    "side": "SIDE, SLOW: normal curls beside your body. About 1 s up, 1-2 s down. Both arms.",
+    "middledrop": "MIDDLE, DROP: hands to the middle, then DROP the weight down fast (the wrong way).",
     "dumbbells": "A DUMBBELL in EACH hand. Normal curls, both arms; turn the wrists a little now and then.",
     "dumbbell": "DUMBBELL in the RIGHT hand only, LEFT hand empty. Normal curls, both arms.",
     "dumbbellL": "DUMBBELL in the LEFT hand only, RIGHT hand empty. Normal curls, both arms.",
@@ -66,17 +71,45 @@ FIRST_READY_S = 20          # more time before the first clip (walk from the Pi 
 FPS = 30
 
 
+_full = {"pending": True, "frames": 0, "screen": None}   # full screen, measured as in main.py
+
+
+def _wrap(text, fs, max_w):
+    lines, line = [], ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if line and cv2.getTextSize(trial, cv2.FONT_HERSHEY_SIMPLEX, fs, 2)[0][0] > max_w:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    return lines + ([line] if line else [])
+
+
 def show(window, frame, lines, rotate):
     img = cv2.rotate(frame, rotate) if rotate is not None else frame.copy()
     img = cv2.flip(cv2.resize(img, (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT)), 1)
     y = 40
     for text, col, fs in lines:
-        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, fs, 2)
-        fs = min(fs, fs * (img.shape[1] - 20) / max(tw, 1))
-        cv2.rectangle(img, (0, y - th - 10), (img.shape[1], y + 10), (15, 15, 15), -1)
-        cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, fs, col, 2)
-        y += th + 26
-    cv2.imshow(window, img)
+        for part in _wrap(text, fs, img.shape[1] - 20):     # long instructions wrap instead of shrinking
+            (tw, th), _ = cv2.getTextSize(part, cv2.FONT_HERSHEY_SIMPLEX, fs, 2)
+            s = min(fs, fs * (img.shape[1] - 20) / max(tw, 1))
+            cv2.rectangle(img, (0, y - th - 10), (img.shape[1], y + 10), (15, 15, 15), -1)
+            cv2.putText(img, part, (10, y), cv2.FONT_HERSHEY_SIMPLEX, s, col, 2)
+            y += th + 22
+    cv2.imshow(window, fit_to_screen(img, _full["screen"]) if _full["screen"] else img)
+    # full screen, so the instructions can be read from where you stand (22 Nov: the small window could not);
+    # switched on after the first picture, then the screen size is measured like main.py does
+    if _full["pending"]:
+        cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        _full["pending"], _full["frames"] = False, 1
+    elif _full["frames"] and _full["screen"] is None:
+        _full["frames"] += 1
+        x, y0, iw, ih = cv2.getWindowImageRect(window)
+        if _full["frames"] >= 4 and x > 0 and y0 >= 0:
+            _full["screen"] = (2 * x + iw, 2 * y0 + ih)
+        elif _full["frames"] > 60:
+            _full["frames"] = 0
     cv2.waitKey(1)
 
 
@@ -108,6 +141,7 @@ def main():
     rotate = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(rotate_deg)
     info = {"front": "picam" if front_src == "picam" else "webcam", "rotate": rotate_deg}
     window = "FitForm - recording test clips"
+    cv2.namedWindow(window, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
     orange, white, red, green = (0, 200, 255), (235, 235, 235), (0, 0, 255), (0, 220, 0)
     try:
         for n, (label, seconds) in enumerate(clips, 1):
@@ -119,7 +153,7 @@ def main():
                 if not ok:
                     return 1
                 left = ready_s - (time.time() - t0)
-                show(window, frame, [(f"Clip {n}/{len(clips)}: {label.upper()}", orange, 1.0), (what, white, 0.6),
+                show(window, frame, [(f"Clip {n}/{len(clips)}: {label.upper()}", orange, 1.0), (what, white, 0.75),
                                      (f"Get in position - recording starts in {left:.0f} s", orange, 0.8)], rotate)
             base = os.path.join(out_dir, label)
             with open(base + "_info.json", "w") as f:
@@ -146,7 +180,7 @@ def main():
                 times.write(f"{i},{now:.3f}\n")
                 i += 1
                 show(window, frame, [(f"RECORDING {label.upper()}  {seconds - now:.0f} s", red, 1.0),
-                                     (what, white, 0.6)], rotate)
+                                     (what, white, 0.75)], rotate)
             times.close()
             for w in (wf, ws):
                 if w is not None:

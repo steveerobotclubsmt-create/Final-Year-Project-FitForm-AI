@@ -139,6 +139,8 @@ VOICE_MODEL = "models/voices/en_GB-cori-medium.onnx"   # downloaded once, see RE
 VOICE_CACHE_DIR = "~/.cache/fitform/voice"             # sentences are made once and kept here as WAV files
 VOICE_VOLUME = 1.0           # 1.0 = normal; the speaker's own volume is the main control
 VOICE_SPEED = 1.0            # > 1 speaks faster
+VOICE_LEAD_IN_SECONDS = 0.0  # silence before each sentence, so a Bluetooth speaker waking from power-saving does
+                             # not swallow the first word ('Right' / 'Left' were cut off, 22 Nov); set by test
 VOICE_COUNT_REPS = True      # say the number after each counted rep
 VOICE_LIVE_WARNINGS = True   # say an arm fault during the lift (only the reliable arm checks, never the hand ones)
 VOICE_LIVE_HOLD_SECONDS = 0.4  # ... once it has lasted this long (one-frame blips are never spoken)
