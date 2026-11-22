@@ -162,7 +162,8 @@ USER_WEIGHT_KG = 70.0
 MET_BICEP_CURL = 3.5         # moderate resistance training
 
 # ---- Raspberry Pi GPIO (BCM pin numbers) ----
-GPIO_ENABLED = True          # falls back to "no hardware" automatically on a laptop
+GPIO_ENABLED = False         # LEDs + buzzer on the pins below: not in the final build (the display shows green/red and
+                             # the speaker talks) - True to use them again; falls back to "no hardware" on a laptop
 GREEN_LED_PIN = 17
 RED_LED_PIN = 27
 BUZZER_PIN = 22

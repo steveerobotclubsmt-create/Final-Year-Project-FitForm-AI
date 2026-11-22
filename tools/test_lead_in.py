@@ -6,7 +6,12 @@ project folder (fitform_env active), with FitForm closed:
   python tools/test_lead_in.py --gap 10            # a longer quiet gap (more time for the speaker to fall asleep)
 Listen: the first number whose 'Right' you hear completely shows the silence the speaker needs - set it as
 VOICE_LEAD_IN_SECONDS in fitform/config.py. (The recording shows what was sent; if a speaker swallows the start
-of a word, that happens inside the speaker, so it is not in the recording.)"""
+of a word, that happens inside the speaker, so it is not in the recording.)
+  python tools/test_lead_in.py --keepalive 0.001     # an inaudible hiss all the time instead of silence
+  python tools/test_lead_in.py --opener              # quiet hiss / louder hiss / soft chime before the sentence
+  python tools/test_lead_in.py --chime-all           # the chime before all four (what FitForm uses)
+Result 22 Nov (MT Bluetooth speaker): silence and the hiss did not help, the chime did (4 of 4 complete); on the
+G733 USB headset every first word was complete either way - so FitForm plays the chime (VOICE_CHIME)."""
 
 import argparse
 import os

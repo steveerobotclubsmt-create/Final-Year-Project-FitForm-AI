@@ -9,6 +9,29 @@
 
 Videos: see [VIDEOS.md](../VIDEOS.md)
 
+## Final tests (22-23 Nov 2026)
+
+The rep counting was improved on 22 Nov and compared with the version of 19 Nov (GitHub commit 9af7324) by replaying
+the same labelled AI Camera clips through both, frame by frame at 15 FPS:
+
+| Clip (what was done) | Correct result | 19 Nov version | Final version |
+|---|---|---|---|
+| Slow proper curls, both arms | all counted | 11 of 12 counted | 12 of 12 counted |
+| Proper curls, hand to the front of the body (2 clips) | all counted | 9 of 10 counted | 10 of 10 counted |
+| Fast drops after a normal lift (2 clips) | all rejected | 13 of 13 rejected | 13 of 13 rejected |
+| Fast swings | all rejected | 14 of 14 rejected | 14 of 14 rejected |
+
+What changed: the lowering is timed correctly when the forearm points at the camera (good curls were called
+"lowered too fast"), and the upper-arm checks also run at the top and while lowering (in a live test the 19 Nov
+version counted 7 curls with the elbows flared out; the final version rejected 4 of 4). Live sessions were recorded
+with timestamped logs, a screenshot every 2 s and the Pi's temperature. Limits found: a bent wrist cannot be judged
+with one front camera, loose clothing makes the upper-arm checks more lenient, and the Pi reached 84-87 deg C
+without a cooler. Details: README, "Known limitations".
+
+Also added after these tests: Follow my goal (sets with a 60 s rest) or Challenge yourself; the voice names the
+arm, joins both arms' sentences and plays a chime so a Bluetooth speaker does not cut the first word; Cancel and
+Delete my account on the phone; Forget speaker on the touch screen.
+
 ## Latest Gantt chart (19 Nov 2026, after Session 4)
 
 Status up to 19 Nov and the plan to the report (25 Nov) and the VIVA (2 Dec 2026). The Excel file also has an

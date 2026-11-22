@@ -10,11 +10,11 @@ FitForm AI runs MediaPipe Pose and Hands (pre-trained CNNs), its own fine-tuned 
 
 ## Features
 - Real-time pose detection (MediaPipe Pose + Hands, OpenCV); joint angles from MediaPipe's 3D world landmarks when available, otherwise the 2D image points
-- Rep counting per arm. A rep only counts if it starts from a straight arm, the upper arm points down and stays by the side, the wrist stays straight, the lift is neither too fast nor too slow and the arm is not dropped back down too fast. The lift and the lowering are timed from the wrist's height, and a rep counts once the arm is back down
+- Rep counting per arm. A rep only counts if it starts from a straight arm, the upper arm points down and stays by the side, the wrist stays straight, the lift is neither too fast nor too slow and the arm is not dropped back down too fast. The lift and the lowering are timed from the wrist's height, and a rep counts once the arm is back down. The upper arm is checked during the whole curl, including the top
 - Weight-in-hand check (CNN): a small neural network (MobileNetV3-Small, fine-tuned on hand pictures from labelled clips) looks at each hand on the front camera and decides "holding a weight" or "empty hand", once per rep. It is advice only: when it happened in 2 or more reps, the phone page shows a "No weight in your hand?" card with pictures. See "Weight-in-hand CNN" below
 - One camera in the final build: the Raspberry Pi AI Camera in front. A second USB webcam at the side (`--side-camera 0`) was built and tested but is not used: with its 1 m cable it could not be placed at a good distance for a side view (it missed the left hand), and with the CNN two cameras ran at only 8-10 FPS (28 Oct demo video) against about 15 FPS with one. The option is still in the code
 - When a curl is not counted, the screen shows why and what to do (e.g. "Keep your upper arm pointing down"), with a short pause before the next rep
-- Spoken feedback (offline Piper voice): the rep count, why a rep was not counted and what to do, live arm warnings during the lift, a greeting after logging in and the session result with calories burned. Only feedback the system is reliable at is spoken - the hand checks are not - and it never repeats itself or talks over itself. See "Spoken feedback" below
+- Spoken feedback (offline Piper voice): the rep count with the arm ("Right, 5"), why a rep was not counted and what to do, live arm warnings, a greeting after logging in, the sets and rests, and the session result with calories burned. A short chime before speaking makes sure Bluetooth speakers do not cut off the first word. Only feedback the system is reliable at is spoken - the hand checks are not - and it never repeats itself or talks over itself. See "Spoken feedback" below
 - Personalised training report (PDF) for any period: calories burned, reps, form, training days, what to work on and progress, downloaded from the phone page or made for every active account with `tools/make_reports.py`. See "Training report" below
 - Curl guide: an animated stick figure showing a correct curl and the key rules (fist facing the body), shown
   once the position check has passed - so the person is standing where they can see it - then "Start curling".
@@ -28,13 +28,14 @@ FitForm AI runs MediaPipe Pose and Hands (pre-trained CNNs), its own fine-tuned 
   "Hi <name>" / QR screen only appears once nobody has been seen for 2 s, so a moment of lost tracking does not
   flip the screen
 - Camera watchdog: if the Pi camera sends no picture for 3 s (seen when the Pi was hot and throttled), it is restarted by itself
-- Accounts on the phone app (username + password, email, body weight). Until someone logs in, the device shows a big QR code (also with a person in view - nothing starts before a login anyway): scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Changed your mind? **Cancel** on the phone (or logging out) frees the device at once. **Delete my account** (bottom of the phone page, with your password) removes the account and all its data - sessions, goals, email, weight, hand pictures and reports - after copying the data files to `logs/backups/` Curls only count after logging in (`REQUIRE_LOGIN` in `fitform/config.py`; not needed with `--no-server` or `--video`)
+- Accounts on the phone app (username + password, email, body weight). Until someone logs in, the device shows a big QR code (also with a person in view - nothing starts before a login anyway): scan it, log in, tap **Train on this device**; the session is saved to your account and the device logs out afterwards. Changed your mind? **Cancel** (or log out) frees the device. **Delete my account** (bottom of the phone page, with your password) removes the account and all its data. Curls only count after logging in (`REQUIRE_LOGIN` in `fitform/config.py`; not needed with `--no-server` or `--video`)
 - "What will you lift?" after **Train on this device**: dumbbells (kg each), water bottles (litres each; water is about 1 kg per litre), something else (kg each) or no weight - pre-filled with the last answer. The weight is saved with the session and shown on the phone page, in the history and in the report, and the advice to add weight uses it: 2-10 %, the lower end for the biceps (ACSM 2009, p. 690), e.g. "from 0.5 kg to about 0.51-0.55 kg". Choosing "no weight" also stops the "No weight in your hand?" card. Calories are not changed by it: they come from MET x 3.5 x body weight / 200 per minute (see "Where the goals come from")
 - Forgot password: the phone page emails a 6-digit code (valid 10 minutes, 5 tries, at most one a minute; only its hash is stored). The username must have the exact capitals, as at login; an unknown username or email shows "This username or email is not registered.". The sending account is set up once with `tools/setup_email.py`. Accounts made before emails were asked add one under Settings (needs the password). On the device itself `tools/reset_password.py` still works
 - Phone app dashboard: next session goal (sets x reps per arm, kcal, minutes), sessions this week, calories per session against each session's goal, last session, why curls were not counted, history, CSV download
+- Two ways to train, chosen on the phone after **Train on this device**: **Follow my goal** (the goal set by set, with a 60 s rest countdown between sets; saved after the last set) or **Challenge yourself** (as many good curls as you can, with a personal best). Only goal sessions move the goal up (see Usage)
 - Goals from published guidelines (see "Where the goals come from")
 - Fist direction and grip (hand not clenched) are advisory (see Known limitations, `FIST_REJECTS = False`): the rep still counts, and the app shows a warning with pictures from the camera when it happened in 2 or more reps
-- Green/red form status on the touch display and spoken feedback through a Bluetooth speaker. These replaced the green/red LEDs and buzzer planned at the start: the display is already in front of the user, and a voice can say why a curl was not counted, which a beep cannot. `fitform/gpio_feedback.py` is still in the code (nothing is wired to it; `--no-gpio` turns it off)
+- Green/red form status on the touch display and spoken feedback through a Bluetooth speaker. These replaced the green/red LEDs and buzzer planned at the start: the display is already in front of the user, and a voice can say why a curl was not counted, which a beep cannot. `fitform/gpio_feedback.py` is still in the code, switched off (`GPIO_ENABLED = False`; nothing is wired to it)
 - Calorie estimate: MET x 3.5 x body weight / 200 per active minute (from the first to the last curl) - the formula printed by the Compendium of Physical Activities
 - Session log: CSV (`logs/sessions.csv`) plus a detailed history (`logs/sessions.jsonl`). A session in which no
   rep was counted (only rejected curls: 0 reps, 0 kcal) is not saved and does not count anywhere - history,
@@ -171,14 +172,11 @@ recordings from October are turned 180 degrees) - change `PICAM_ROTATE` / `WEBCA
 
 With nobody in front of it, the device shows a QR code with its address (e.g. `http://192.168.1.23:5000`).
 Scan it with a phone on the same Wi-Fi, log in or create an account, and tap **Train on this device**.
-Wear fitted clothes (e.g. a T-shirt or singlet): the camera finds the elbows from the outline of the arm, and a
-loose or oversized shirt hides them, so a raised or flared elbow is measured smaller and caught less strictly
-(22 Nov: elbows flared 31-59 deg in a singlet were all measured clearly).
+Wear fitted clothes (e.g. a T-shirt or singlet) so FitForm can see your elbows.
 Then choose how to train:
-- **Follow my goal** (e.g. 3 sets x 8 per arm): the screen shows "Set 1 of 3  Left 5/8  Right 6/8". When both arms
-  have done the set, FitForm says "Set 1 done. Rest 60 seconds." and counts the rest down (ACSM 2009: 1-2 min for
-  exercises like curls). You may step out of view while resting; a curl ends the rest early. After the last set the
-  session is saved. Only these sessions move your goal up.
+- **Follow my goal** (e.g. 3 sets x 8 per arm): FitForm counts each set, then gives you a 60 s rest countdown
+  (you may step away; a curl ends the rest early). The session is saved after the last set. Only these sessions
+  move your goal up.
 - **Challenge yourself**: as many good curls as you can; saved 30 s after your last curl. It does not change your
   goal, but can set a new personal best.
 
@@ -189,9 +187,9 @@ On the touch screen, tap the **X** in the top-right corner twice to close FitFor
 Speaker for the spoken feedback: tap **Speaker** (top right, between sessions). Any Bluetooth speaker works -
 **Find new speaker**, put the speaker in pairing mode, tap its name; a PIN keypad appears only if the speaker asks
 for one (usually 0000). Already paired speakers and other outputs (e.g. HDMI) are listed to switch between, or
-**No speaker (text only)** mutes the voice. **Test sound** checks it. The choice is kept in `logs/speaker.json` and
+**No speaker (text only)** mutes the voice. **Test sound** checks it. **Forget speaker** removes a paired speaker. The choice is kept in `logs/speaker.json` and
 the speaker is reconnected when FitForm starts (`fitform/speaker.py`, screens in `fitform/speaker_ui.py`).
-(With a keyboard: **Q** quits and saves, **R** resets.)
+(With a keyboard plugged in: **Q** quits and saves, **R** resets - not shown on the touch screen, which has the X.)
 
 Desktop icon: `bash tools/run_fitform.sh --install` puts a **FitForm AI** icon on the Pi's desktop and in the menu
 (Education). Tapping it starts FitForm full screen; it never starts a second copy, and the output goes to
@@ -287,19 +285,27 @@ What is said - only feedback the system is reliable at:
 |---|---|
 | After logging in on the phone | "Hi Steve. Let's check your position." |
 | Position check (each instruction once) | "Step back so your head is in view." ... "Good position. Start curling." |
-| A rep is counted | "5" (or "Right, 5" while both arms are in use) |
-| A rep is not counted for an arm or tempo reason | "Not counted. Keep your elbow by your side." |
+| A rep is counted | "Right, 5" (both arms at once: "Right, 5, Left, 5") |
+| A rep is not counted for an arm or tempo reason | "Left. Not counted. Keep your elbow by your side." |
+| One arm counted, the other not, at the same moment | "Right, 21. Left. Not counted. Lower the weight slowly." |
 | During the lift, an arm fault lasting 0.4 s | "Keep your upper arm pointing down" |
-| The session is saved | "Session saved. 24 reps counted. About 6 calories burned. Goal reached! Next goal: 3 sets of 10 per arm." |
+| Follow my goal | "Right arm done. Finish the left arm." "Set 1 done. Rest 60 seconds." "Ten seconds." "Set 2. Start curling." |
+| The session is saved | "Session saved. 24 reps counted. About 6 calories burned. Goal reached! Next goal: 3 sets of 10 per arm." (after the last set: "All sets done! ...") |
+| Cancel / log out on the phone | "Logged out. FitForm is free for the next person." |
+| Closing with the X | "Saved. Closing." |
 
 The hand checks (grip, fist direction, weight in the hand, hand not visible) are never spoken: they can be wrong
 (see Known limitations), so they stay on the phone page, with pictures. A rep rejected only for a hand reason
-just says "Not counted."
+just says "Left. Not counted." (with the arm).
 
 No repeats, no clashes: one sentence at a time, never cut off; a more important sentence replaces a less
 important one that is still waiting; a rep number or tip that cannot be said in time is dropped rather than said
 late; the same fix is said at most once in 20 s (after that just "Not counted."); a live warning that was just
-said is not repeated by the rejection that follows; both arms finishing together become one sentence. Every
+said is not repeated by the rejection that follows; both arms finishing together become one sentence, joined from the ready-made ones so it is said at once; a
+number may wait a moment behind another sentence.
+
+**Chime:** some Bluetooth speakers cut off the first word after a quiet moment, so a short soft chime plays before
+a sentence when nothing was said for a second. Every
 sentence is also printed in the terminal as `[VOICE] "..."`. Settings: `VOICE_*` in `fitform/config.py`;
 `--no-voice` turns it off. Without a speaker, Piper or the voice file, FitForm runs silently as before.
 
@@ -383,14 +389,19 @@ Sources:
   reps can be timed less accurately.
 - **Testing:** the author's own sessions were screen-recorded and checked; the supervisor and a volunteer also
   tried the prototype, but their sessions were not recorded, so there is no exact accuracy figure for other people.
-- **Spoken rep numbers can be skipped** when both arms finish reps in quick succession: a number that cannot
-  be said before the next rep is dropped rather than said late (by design - no clashes, no out-of-date counts).
-  The screen always shows the count.
+- **Spoken rep numbers can be skipped** in a fast run of reps (a number is dropped rather than said late). The
+  screen always shows the count.
+- **Bent wrist** is hard to see with one front camera (the wrist bends towards the camera), so it is rarely
+  caught. A side camera would see it.
+- **Loose clothing** hides the elbows, so a raised or flared elbow is caught less strictly - wear fitted clothes.
+  A slightly flared elbow can still pass.
+- **Heat:** without a cooler the Pi gets hot (about 85 deg C) and slows down a little during long sessions.
 
 ## Wiring
 Nothing is wired to the GPIO pins in the final build: the AI Camera (CSI ribbon) and the touch display (DSI ribbon)
-plug into the Pi, and the speaker connects by Bluetooth. The LEDs and buzzer from the original plan can still be
-connected (default BCM pins below, change in `fitform/config.py`):
+plug into the Pi, and the speaker connects by Bluetooth, so the pins are switched off (`GPIO_ENABLED = False`). The
+LEDs and buzzer from the original plan can still be connected: set `GPIO_ENABLED = True` (default BCM pins below,
+change in `fitform/config.py`):
 
 | Component | GPIO pin | Notes |
 |---|---|---|
@@ -399,11 +410,11 @@ connected (default BCM pins below, change in `fitform/config.py`):
 | Buzzer (active, 5V/3.3V) | GPIO 22 | other leg to GND |
 
 ## Tests
-126 tests, no camera needed:
+147 tests, no camera needed:
 ```bash
-python tests/test_logic.py         # 72: counting, goals, accounts, the app
-python tests/test_voice_report.py  # 45: spoken feedback and the training report
-python tests/test_speaker.py       # 9: speaker settings
+python tests/test_logic.py         # 76: counting, sets and rests, goals, accounts, the app
+python tests/test_voice_report.py  # 56: spoken feedback, the phone app and the training report
+python tests/test_speaker.py       # 15: speaker settings
 ```
 
 ## Tested versions
@@ -420,4 +431,6 @@ GitHub. The phone page uses plain HTTP on the local Wi-Fi, so passwords and code
 network. When a rep looked like it was
 done with the fist turned out, the hand not gripping or no weight in the hand, a small picture of the hand is saved
 in `logs/snaps/` (at most 6 per session) so you can check it on the phone page; it is only reachable on the local Wi-Fi. Set `MAX_SNAPSHOTS = 0` in
-`fitform/config.py` to turn this off, and delete `logs/` to remove all data.
+`fitform/config.py` to turn this off. A user removes their own account and all its data with **Delete my account**
+on the phone page (password needed; the data files are first copied to `logs/backups/`); deleting `logs/` removes
+everyone's data.

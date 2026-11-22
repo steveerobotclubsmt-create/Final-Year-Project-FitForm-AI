@@ -122,7 +122,6 @@ def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
     else:                                   # 'Not counted - why' + what to do
         cv2.putText(image, lines[0], (10, h - 48), FONT, 0.7, feedback.message_color, 2)
         cv2.putText(image, lines[1], (10, h - 14), FONT, 0.7, (0, 200, 255), 2)
-    cv2.putText(image, "Q = quit  |  R = reset", (10, h - bar - 10), FONT, 0.45, (150, 150, 150), 1)
     return image
 
 

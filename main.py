@@ -45,7 +45,7 @@ def parse_args():
     p.add_argument("--no-side", action="store_true", help="use one camera only, even if two are found")
     p.add_argument("--video", help="video file to use instead of a camera")
     p.add_argument("--weight", type=float, default=config.USER_WEIGHT_KG, help="body weight in kg")
-    p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer")
+    p.add_argument("--no-gpio", action="store_true", help="disable LEDs/buzzer (off unless GPIO_ENABLED in config)")
     p.add_argument("--no-server", action="store_true", help="disable the Flask web server")
     p.add_argument("--headless", action="store_true", help="no window (for testing)")
     p.add_argument("--windowed", action="store_true", help="normal window instead of full screen")
