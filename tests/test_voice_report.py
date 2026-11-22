@@ -557,6 +557,73 @@ def test_weight_advice_and_no_weight_warning_use_the_answer():
     assert hand_warnings({**s, "equipment": {"kind": "none"}}) == []   # 'no weight' was chosen: no warning
 
 
+def test_challenge_keeps_the_goal_and_tracks_the_best():
+    """Only 'Follow my goal' sessions move the ladder; a challenge can set a personal best."""
+    from fitform.plan import current_goal, goal_for, make_plan
+    big = {"reps_right": 30, "reps_left": 30, "reps_total": 60, "attempted_total": 60, "form_accuracy_pct": 100.0}
+    hist = [{"summary": {**big, "reps_total": 40}, "plan": {"goal": goal_for(0, 80)}}]
+    ch = make_plan({**big, "mode": "challenge"}, hist, 80)
+    assert ch["mode"] == "challenge" and not ch["met_goal"] and ch["goal"]["step"] == 0
+    assert ch["best"] == 60 and ch["headline"] == "New personal best: 60 curls counted!"
+    gl = make_plan({**big, "mode": "goal"}, hist, 80)
+    assert gl["met_goal"] and gl["goal"]["step"] == 1
+    old = make_plan(big, hist, 80)                       # saved before the modes existed: a goal session
+    assert old["met_goal"] and old["goal"]["step"] == 1
+    assert current_goal(hist + [{"summary": big, "plan": gl}], 80)["step"] == 1
+    assert current_goal([], 80)["step"] == 0
+    # two goal sessions in a row at 3x12 - a challenge in between does not break the run
+    at12 = {**big, "reps_right": 36, "reps_left": 36, "reps_total": 72, "mode": "goal"}
+    h = [{"summary": at12, "plan": {"goal": goal_for(2, 80)}}]
+    first = make_plan(at12, h, 80)
+    h += [{"summary": at12, "plan": first}]
+    h += [{"summary": {**big, "mode": "challenge"}, "plan": make_plan({**big, "mode": "challenge"}, h, 80)}]
+    assert make_plan(at12, h, 80)["headline"].startswith("Two strong sessions in a row")
+
+
+def test_phone_offers_goal_or_challenge():
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        client = create_app(log, secret_key="test").test_client()
+        client.post("/login", data={"username": "steve", "password": "secret1"})
+        page = client.get("/start").get_data(as_text=True)
+        assert "Follow my goal: 3 sets &times; 8 per arm" in page and "Challenge yourself" in page
+        assert "60 seconds of rest" in page
+        client.post("/start", data={"kind": "dumbbell", "amount": "1", "mode": "goal"})
+        assert log.device_user() == "steve" and log.device_mode() == "goal"
+        assert "Saved after the last set" in client.get("/").get_data(as_text=True)
+        client.post("/start", data={"kind": "dumbbell", "amount": "1", "mode": "challenge"})
+        assert log.device_mode() == "challenge"
+        log.clear_device_user()
+        assert log.device_mode() == "challenge"          # nobody logged in
+
+
+def test_sets_and_rest_are_spoken():
+    from fitform.workout import GoalWorkout
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    w = GoalWorkout(3, 8)
+    c.on_workout("arm_done", "right", w)
+    assert said(v) == "Right arm done. Finish the left arm."
+    c.on_workout("set_done", 1, w)
+    assert said(v) == "Set 1 done. Rest 60 seconds."
+    c.on_workout("rest_warning", 2, w)
+    assert said(v) == "Ten seconds."
+    c.on_workout("rest_over", 2, w)
+    assert said(v) == "Set 2. Start curling."
+    for line in ("Set 1 done. Rest 60 seconds.", "Set 2. Start curling.", "Right arm done. Finish the left arm."):
+        assert line in c.phrases()                      # made at start-up: said without delay
+    c.on_session_end({"reps_total": 48, "calories_kcal": 9.6, "mode": "goal", "sets_done": 3, "goal_sets": 3},
+                     {"met_goal": True, "goal": {"sets": 3, "reps": 10}})
+    assert said(v).startswith("All sets done! Session saved. 48 reps counted.")
+    c.on_session_end({"reps_total": 50, "calories_kcal": 9.6, "mode": "challenge"},
+                     {"mode": "challenge", "headline": "New personal best: 50 curls counted!",
+                      "goal": {"sets": 3, "reps": 8}})
+    text = said(v)
+    assert text.endswith("New personal best!") and "Next goal" not in text
+
+
 def test_phone_asks_what_will_be_lifted():
     with tempfile.TemporaryDirectory() as tmp:
         log = SessionLogger(tmp)

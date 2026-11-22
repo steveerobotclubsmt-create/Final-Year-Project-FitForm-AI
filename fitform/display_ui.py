@@ -271,6 +271,34 @@ def draw_position(image, result, progress=0.0):
     return image
 
 
+def draw_workout_line(image, text):
+    """'Set 2 of 3   Right 5/8   Left 8/8' (or the challenge's best) under the time line, between the boards."""
+    h, w = image.shape[:2]
+    room = w - 2 * 185
+    (tw, th), _ = cv2.getTextSize(text, FONT, 0.65, 2)
+    fs = min(0.65, 0.65 * room / max(tw, 1))
+    (tw, th), _ = cv2.getTextSize(text, FONT, fs, 2)
+    x = (w - tw) // 2
+    cv2.rectangle(image, (x - 8, 42), (x + tw + 8, 50 + th + 8), (20, 20, 20), -1)
+    cv2.putText(image, text, (x, 50 + th), FONT, fs, (0, 220, 255), 2)
+    return image
+
+
+def draw_rest(image, seconds_left, next_set, sets):
+    """Rest between sets: a big countdown in the middle (the session stays open, even out of view)."""
+    h, w = image.shape[:2]
+    overlay = image.copy()
+    cv2.rectangle(overlay, (w // 2 - 230, h // 2 - 120), (w // 2 + 230, h // 2 + 110), (15, 15, 15), -1)
+    cv2.addWeighted(overlay, 0.85, image, 0.15, 0, image)
+    m, s = divmod(int(seconds_left + 0.999), 60)
+    for text, fs, col, y in (("REST", 1.0, (0, 220, 0), h // 2 - 70),
+                             (f"{m}:{s:02d}", 2.6, (255, 255, 255), h // 2 + 20),
+                             (f"Set {next_set} of {sets} next - or curl to start now", 0.6, (0, 200, 255), h // 2 + 75)):
+        (tw, th), _ = cv2.getTextSize(text, FONT, fs, 3 if fs > 2 else 2)
+        cv2.putText(image, text, ((w - tw) // 2, y), FONT, fs, col, 3 if fs > 2 else 2)
+    return image
+
+
 def draw_banner(image, text, color, y=190):
     """One line of text on a dark band across the middle of the picture (position messages)."""
     h, w = image.shape[:2]

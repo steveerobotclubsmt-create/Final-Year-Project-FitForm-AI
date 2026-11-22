@@ -61,6 +61,11 @@ class SessionTracker:
             return max(0.0, idle_left)
         return None
 
+    def keep_alive(self, now):
+        """Resting between sets (Follow my goal): neither walking away nor not curling ends the session."""
+        if self.active:
+            self.last_seen = self.last_activity = now
+
     def end(self):
         self.active = False
         self.last_activity = None

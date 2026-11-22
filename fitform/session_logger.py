@@ -59,6 +59,7 @@ class SessionLogger:
         self.snap_dir = os.path.join(self.dir, "snaps")
         self._lock = threading.Lock()
         self._device_user, self._device_until, self._device_equipment = None, 0.0, None
+        self._device_mode = "challenge"
 
     # ---------- accounts ----------
     def _users(self):
@@ -216,8 +217,10 @@ class SessionLogger:
                 self._write_users(users)
 
     # ---------- who is training on this device ----------
-    def set_device_user(self, name, equipment=None):
+    def set_device_user(self, name, equipment=None, mode="challenge"):
+        """mode: 'goal' (Follow my goal: sets with rests) or 'challenge' (as many as you can) - workout.py."""
         self._device_user, self._device_equipment = name, equipment
+        self._device_mode = mode if mode in ("goal", "challenge") else "challenge"
         self._device_until = time.time() + config.DEVICE_LOGIN_MINUTES * 60
 
     def device_user(self):
@@ -228,6 +231,10 @@ class SessionLogger:
     def device_equipment(self):
         """What the user on this device said they will lift (asked after 'Train on this device'), or None."""
         return self._device_equipment if self.device_user() else None
+
+    def device_mode(self):
+        """'goal' or 'challenge', as chosen on the phone ('challenge' when nobody is logged in)."""
+        return self._device_mode if self.device_user() else "challenge"
 
     def keep_device_user(self):
         """A session is running: do not let the login time out in the middle of it."""
@@ -376,7 +383,12 @@ EQUIP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <label id="amount_label">How heavy is each one? <span id="unit">({{ unit_text }})</span>
 <input name="amount" id="amount" type="number" step="0.05" min="0.1" max="50" value="{{ amount }}" inputmode="decimal"></label>
 <p class="muted" id="water_note">Water weighs about 1 kg per litre, so a 0.5 L bottle is about 0.5 kg.</p>
-<button>Start</button></form>
+<h2 style="margin:14px 0 4px">How do you want to train?</h2>
+<button name="mode" value="goal">Follow my goal: {{ g.sets }} sets &times; {{ g.reps }} per arm</button>
+<p class="muted">FitForm counts each set and gives you {{ rest }} seconds of rest between sets. Saved after the last set.</p>
+<button name="mode" value="challenge" class="ghost" style="width:100%;padding:12px;font-size:16px">Challenge yourself</button>
+<p class="muted">As many good curls as you can{% if best %} - your best is {{ best }}{% endif %}. Saved 30 seconds after your last curl. Does not change your goal.</p>
+</form>
 <p><a href="/">Back</a></p>
 <script>
 function unit(){var k=document.querySelector('input[name=kind]:checked'); k=k?k.value:'';
@@ -392,7 +404,7 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 {% if msg %}<p class="err">{{ msg }}</p>{% endif %}
 <div class="card">
 {% if device_user == user %}<p class="ok">This device is ready for you - stand in front of the camera and start.</p>
-<p class="muted">Your session is saved to your account when you walk away.</p>
+<p class="muted">{% if device_mode == 'goal' %}Follow my goal: {{ g.sets }} sets &times; {{ g.reps }} per arm, with rests in between. Saved after the last set.{% else %}Challenge yourself: saved 30 seconds after your last curl.{% endif %}</p>
 {% else %}<a class="btn" href="/start">Train on this device</a>
 {% if device_user %}<p class="muted">Someone else is about to train on this device.</p>{% endif %}{% endif %}
 </div>
@@ -497,7 +509,8 @@ def create_app(logger, secret_key=None, mailer=None):
     from flask import (Flask, abort, jsonify, redirect, render_template_string, request, send_from_directory,
                        session)
     from .equipment import label as eq_label, short as eq_short
-    from .plan import SOURCES, WEEKLY_SESSIONS, curls_line, goal_for, hand_warnings, week_count
+    from .plan import (REST_S, SOURCES, WEEKLY_SESSIONS, current_goal, curls_line, hand_warnings, personal_best,
+                       week_count)
 
     app = Flask(__name__)
     if secret_key is None:
@@ -529,13 +542,14 @@ def create_app(logger, secret_key=None, mailer=None):
             h["goal_kcal"] = ((h.get("plan") or {}).get("this_goal") or {}).get("kcal", 0) or 0
         last = hist[-1] if hist else None
         plan = last.get("plan") if last else None
-        g = (plan or {}).get("goal") or goal_for(0, weight)
+        g = current_goal(hist, weight)
         # worked out from the session's numbers now (not the text saved with it), so older sessions read correctly
         warnings = hand_warnings(last["summary"]) if last else []
         today = date.today()
         return render_template_string(DASH, style=STYLE, user=user, weight=weight, hist=hist[-12:], last=last,
                                       plan=plan, g=g, week=week_count(hist), week_target=WEEKLY_SESSIONS,
                                       warnings=warnings, sources=SOURCES, device_user=logger.device_user(),
+                                      device_mode=logger.device_mode(),
                                       email=logger.email_of(user),
                                       msg=request.args.get("msg"), today=today.isoformat(), caption=snap_caption,
                                       curls=curls_line(last["summary"]) if last else None, eqlabel=eq_label, eqshort=eq_short,
@@ -639,7 +653,10 @@ def create_app(logger, secret_key=None, mailer=None):
         last = logger.last_equipment(user) or {"kind": "dumbbell", "amount": 0.5}
         if request.method == "GET":
             kind = last.get("kind", "dumbbell")
+            hist = logger.history(user)
             return render_template_string(EQUIP, style=STYLE, kinds=[(k, v[0]) for k, v in KINDS.items()],
+                                          g=current_goal(hist, logger.user_weight(user)), rest=int(REST_S),
+                                          best=personal_best(hist),
                                           kind=kind, amount=f"{last.get('amount') or 0.5:g}",
                                           unit_text="litres of water in each bottle" if kind == "bottle" else "kg each",
                                           msg=request.args.get("msg"))
@@ -650,7 +667,7 @@ def create_app(logger, secret_key=None, mailer=None):
             logger.set_last_equipment(user, eq)
         else:                                        # (older page without the question): last answer, if any
             eq = logger.last_equipment(user)
-        logger.set_device_user(user, eq)
+        logger.set_device_user(user, eq, request.form.get("mode", "challenge"))
         return redirect("/")
 
     @app.route("/weight", methods=["POST"])

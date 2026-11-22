@@ -20,13 +20,13 @@ from fitform.calorie_tracker import CalorieTracker
 from fitform.camera_thread import CameraStream
 from fitform.coach import Coach
 from fitform.display_ui import ArmSmoother, draw_arm, draw_banner, draw_debug, draw_demo, draw_hud, draw_idle, \
-    draw_position, draw_qr_corner, draw_saved, fit_to_screen, ExitButton
+    draw_position, draw_qr_corner, draw_rest, draw_saved, draw_workout_line, fit_to_screen, ExitButton
 from fitform.feedback_engine import FeedbackEngine
 from fitform.gpio_feedback import GPIOFeedback
 from fitform.hand_check import HandChecker
 from fitform.pose_engine import PoseEngine
 from fitform.equipment import label as eq_label
-from fitform.plan import make_plan
+from fitform.plan import current_goal, make_plan, personal_best
 from fitform.position import ADVICE, DriftWatch, PositionGate, check_position
 from fitform.session import SessionTracker, curls_allowed, nobody_there
 from fitform.session_logger import SessionLogger, local_ip, start_server
@@ -34,6 +34,7 @@ from fitform.session_summary import build_summary, counts_as_session, print_summ
 from fitform.speaker import Speakers
 from fitform.speaker_ui import SpeakerMenu
 from fitform.voice import Voice
+from fitform.workout import GOAL, GoalWorkout
 
 
 def parse_args():
@@ -52,6 +53,9 @@ def parse_args():
     p.add_argument("--no-palm", action="store_true", help="turn off the palm-direction check")
     p.add_argument("--no-hold", action="store_true", help="turn off the 'weight in the hand' check (CNN)")
     p.add_argument("--no-voice", action="store_true", help="turn off the spoken feedback")
+    p.add_argument("--mode", choices=("goal", "challenge"), help="how to train when nobody chooses on the phone "
+                   "(--video / --no-server); default: challenge")
+    p.add_argument("--goal", default="3x8", help="sets x reps per arm for --mode goal without a login, e.g. 3x8")
     p.add_argument("--no-position-check", action="store_true",
                    help="count curls without checking the position first")
     p.add_argument("--debug", action="store_true", help="print live angles and hand readings in the terminal for tuning")
@@ -197,6 +201,7 @@ def main():
 
     session_user = None
     session_equipment = None                    # what the user said they lift (asked on the phone)
+    session_mode, workout, best = "challenge", None, 0   # 'Follow my goal' (sets + rests) or 'Challenge yourself'
     qr = None
     try:
         qr = cv2.QRCodeEncoder.create().encode(url) if url.startswith("http") else None
@@ -206,8 +211,13 @@ def main():
     def end_session(end_time):
         """Session over: summary + goal for next time, saved to the user's account; device logs out.
         Returns (summary, plan), or (None, None) when no rep was counted - that is not saved as a session."""
+        nonlocal workout
         summary = build_summary(feedback, calories, end_time, snapshots=snaps, user=session_user,
                                 equipment=session_equipment)
+        summary["mode"] = session_mode
+        if workout is not None:
+            summary.update(sets_done=workout.sets_done(), goal_sets=workout.sets, goal_reps=workout.reps)
+        workout = None
         if counts_as_session(summary):
             plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
             print_summary(summary, plan)
@@ -388,6 +398,28 @@ def main():
                 calories.weight_kg = logger.user_weight(session_user) if session_user else args.weight   # guest: --weight
                 print(f"Session started for {session_user or 'guest'} ({calories.weight_kg:.0f} kg body weight, "
                       f"lifting {eq_label(session_equipment)})")
+                hist = logger.history(session_user) if session_user else []
+                session_mode = logger.device_mode() if session_user else (args.mode or "challenge")
+                best = personal_best(hist)
+                if session_mode == GOAL:
+                    if session_user:
+                        g = current_goal(hist, calories.weight_kg)
+                        sets, reps = g["sets"], g["reps"]
+                    else:
+                        sets, reps = (int(v) for v in args.goal.lower().split("x"))
+                    workout = GoalWorkout(sets, reps)
+                    print(f"[GOAL] Follow my goal: {sets} sets x {reps} reps per arm, {workout.rest_s:.0f} s rest")
+                else:
+                    print(f"[GOAL] Challenge yourself (best so far: {best} curls)")
+            goal_done = False
+            if workout is not None and session_tag is not None:
+                counts = {a: feedback.counters[a].count for a in ("right", "left")}
+                for kind, value in workout.update(counts, now):
+                    print(f"[GOAL] {kind} {value}  ({workout.status_line(counts)})")
+                    coach.on_workout(kind, value, workout)
+                    goal_done = goal_done or kind == "goal_done"
+                if workout.resting:
+                    tracker.keep_alive(now)             # resting: the session stays open, even out of view
             if tracker.active:
                 logger.keep_device_user()
             # spoken feedback - not during the start-up demo (curls then are not counted) or before logging in
@@ -427,8 +459,8 @@ def main():
                 demo_on = False                         # (and the guide stops: it is shown after the check)
                 if nobody_there(now, last_present, config.POSITION_FORGET_SECONDS):
                     coach.on_position_reset()           # really gone: instructions may be said again to the next one
-            if tracker.update(now, present, bool(events) and present):
-                why = "nobody seen" if not present else "no curl"
+            if goal_done or tracker.update(now, present, bool(events) and present):
+                why = "all sets done" if goal_done else "nobody seen" if not present else "no curl"
                 print(f"[SESSION] ended ({why})")
                 saved_summary, saved_plan = end_session(tracker.last_activity or now)
                 snaps, session_tag, session_user = [], None, None
@@ -468,6 +500,14 @@ def main():
                     draw_qr_corner(image, qr, url, login_required)                  # not logged in yet
                 elif gate and not gate.passed and not tracker.active and not demo_on and logged_in:
                     draw_position(image, pos, gate.progress(now))                   # position check
+                if tracker.active and not (now < saved_until):
+                    if workout is not None and workout.resting:
+                        draw_rest(image, workout.rest_left(now), workout.set_no, workout.sets)
+                    elif workout is not None:
+                        draw_workout_line(image, workout.status_line(
+                            {a: feedback.counters[a].count for a in ("right", "left")}))
+                    elif session_tag is not None:
+                        draw_workout_line(image, f"Challenge yourself   best so far: {best}")
                 if session_tag is None and not demo_on and now < go_until:
                     draw_banner(image, "Good position - start curling", (0, 220, 0))
                 elif drift_key and not (now < saved_until):

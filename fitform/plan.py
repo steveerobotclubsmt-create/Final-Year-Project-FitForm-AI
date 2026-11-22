@@ -18,8 +18,10 @@ Every rule below was checked against the source's own text on 16 Nov 2026 (quote
               convert EE values are available on the Compendium website". It notes the values do "not reflect
               precise individual EE values".
 
-The goal climbs a ladder 3x8 -> 3x10 -> 3x12 reps per arm; after two sessions in a row at 3x12 with good
-form it advises a small weight increase and starts again at 3x8. General guidance, not coaching."""
+The goal climbs a ladder 3x8 -> 3x10 -> 3x12 reps per arm; after two goal sessions in a row at 3x12 with good
+form it advises a small weight increase and starts again at 3x8. Only 'Follow my goal' sessions (workout.py) move
+the ladder; a 'Challenge yourself' session keeps the goal and can set a personal best. Sessions saved before the
+two ways existed count as goal sessions. General guidance, not coaching."""
 
 from datetime import datetime, timedelta
 
@@ -75,31 +77,58 @@ def _met(s, goal):
     return weakest >= goal["reps_per_arm"] and s.get("form_accuracy_pct", 0) >= GOOD_FORM
 
 
+def is_goal_session(s):
+    """True for a 'Follow my goal' session (and for sessions saved before the two ways existed)."""
+    return (s or {}).get("mode", "goal") != "challenge"
+
+
+def current_goal(history, weight_kg):
+    """The goal for the next session: the one stored with the user's last session, or the starting goal."""
+    for h in reversed(history or []):
+        g = (h.get("plan") or {}).get("goal")
+        if g:
+            return g
+    return goal_for(0, weight_kg)
+
+
+def personal_best(history):
+    """Most curls counted in one session so far (0 if none)."""
+    return max((int((h.get("summary") or {}).get("reps_total", 0) or 0) for h in (history or [])), default=0)
+
+
 def make_plan(s, history=None, weight_kg=None):
     """s: this session's summary. history: this user's earlier records [{'summary','plan'}] oldest first.
     Returns the plan incl. 'goal' for the next session (stored with the session, so the next one is judged
     against it)."""
     history = [h for h in (history or []) if (h.get("summary") or {}).get("attempted_total")]
     weight_kg = weight_kg or s.get("weight_kg") or config.USER_WEIGHT_KG
-    prev_plan = (history[-1].get("plan") or {}) if history else {}
-    current = prev_plan.get("goal") or goal_for(0, weight_kg)          # the goal this session was aimed at
+    current = current_goal(history, weight_kg)                        # the goal this session was aimed at
+    goal_hist = [h for h in history if is_goal_session(h.get("summary"))]
     step = current.get("step", 0)
     acc = s.get("form_accuracy_pct", 0.0)
     r, l = s.get("reps_right", 0), s.get("reps_left", 0)
     eq = s.get("equipment")
     keep = f"Keep the same weight ({label(eq)})." if eq and eq.get("kind") != "none" else "Keep the same weight."
     plan = {"focus": [], "notes": [], "progress": None, "palm_warning": None, "grip_warning": None,
-            "weight_warning": None, "this_goal": current, "met_goal": _met(s, current), "weight": keep}
+            "weight_warning": None, "this_goal": current, "met_goal": False, "weight": keep,
+            "mode": "goal" if is_goal_session(s) else "challenge"}
     if eq and eq.get("kind") == "none":
         plan["notes"].append(next_load_advice(eq))
+    best_before = personal_best(history)
+    plan["best"] = max(best_before, int(s.get("reps_total", 0) or 0))
 
-    if plan["met_goal"]:
+    if not is_goal_session(s):                  # challenge: the goal stays, the personal best may move
+        reps = int(s.get("reps_total", 0) or 0)
+        plan["headline"] = (f"New personal best: {reps} curls counted!" if reps > best_before and history else
+                            f"Challenge done: {reps} curls counted (best {plan['best']})")
+    elif _met(s, current):
+        plan["met_goal"] = True
         if step < len(LADDER) - 1:
             step += 1
             plan["headline"] = "Goal reached! Next time: a few more reps"
         else:
-            prev_met = bool(history) and (history[-1].get("plan") or {}).get("met_goal") and \
-                (history[-1].get("plan") or {}).get("this_goal", {}).get("step") == len(LADDER) - 1
+            last = (goal_hist[-1].get("plan") or {}) if goal_hist else {}      # the last GOAL session
+            prev_met = bool(last.get("met_goal")) and last.get("this_goal", {}).get("step") == len(LADDER) - 1
             if prev_met:
                 step = 0
                 plan["headline"] = "Two strong sessions in a row - time for a heavier weight"

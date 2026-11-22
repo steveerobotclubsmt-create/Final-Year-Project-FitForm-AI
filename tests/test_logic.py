@@ -1038,6 +1038,39 @@ def test_logger_accounts_and_app():
         assert "Log in" in client.get("/").get_data(as_text=True)
 
 
+# ---------- Follow my goal: sets and rests (workout.py) ----------
+def test_goal_workout_sets_rest_and_end():
+    from fitform.workout import GoalWorkout
+    w = GoalWorkout(3, 2, rest_s=60)
+    assert w.update({"right": 1, "left": 1}, 0.0) == []
+    assert w.status_line({"right": 1, "left": 1}) == "Set 1 of 3   Left 1/2   Right 1/2"
+    assert w.update({"right": 2, "left": 1}, 1.0) == [("arm_done", "right")]
+    assert w.update({"right": 3, "left": 1}, 2.0) == []                  # extra right rep while waiting
+    assert w.update({"right": 3, "left": 2}, 3.0) == [("set_done", 1)]  # both arms: rest starts
+    assert w.resting and w.rest_left(13.0) == 50.0 and w.sets_done() == 1
+    assert w.update({"right": 3, "left": 2}, 52.0) == []                 # 11 s left
+    assert w.update({"right": 3, "left": 2}, 54.0) == [("rest_warning", 2)]
+    assert w.update({"right": 3, "left": 2}, 58.0) == []                 # said once
+    assert w.update({"right": 3, "left": 2}, 63.0) == [("rest_over", 2)]
+    assert w.status_line({"right": 3, "left": 2}) == "Set 2 of 3   Left 0/2   Right 0/2"   # the extra rep did not carry
+    w.update({"right": 5, "left": 4}, 70.0)                                # set 2 done in one frame
+    assert w.resting and w.set_no == 3
+    assert w.update({"right": 6, "left": 4}, 80.0) == [("rest_over", 3)]  # a curl ends the rest early ...
+    assert w.in_set("right", {"right": 6, "left": 4}) == 1                # ... and counts in the new set
+    assert w.update({"right": 7, "left": 6}, 85.0) == [("goal_done", 3)]
+    assert w.finished and w.sets_done() == 3 and w.update({"right": 9, "left": 9}, 90.0) == []
+
+
+def test_rest_keeps_the_session_open_even_out_of_view():
+    from fitform.session import SessionTracker
+    t = SessionTracker(away_s=5, idle_s=30)
+    t.update(0.0, True, True)
+    for now in range(1, 61):                    # 60 s rest, walked away
+        t.keep_alive(float(now))
+        assert not t.update(float(now), False, False)
+    assert not t.update(64.0, False, False) and t.update(66.0, False, False)   # after the rest: 5 s away ends it
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

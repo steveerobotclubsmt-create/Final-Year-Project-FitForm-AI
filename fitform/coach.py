@@ -52,6 +52,11 @@ class Coach:
             out += [f"{arm}. Not counted."] + [f"{arm}. Not counted. {FIX_TEXT[k]}." for k in SPOKEN_REASONS]
         for n in range(1, 31):
             out += [f"Right, {n}", f"Left, {n}"]
+        out += ["Right arm done. Finish the left arm.", "Left arm done. Finish the right arm.", "Ten seconds.",
+                "All sets done!"]
+        from .plan import LADDER, REST_S
+        for n in range(1, max(s for s, _ in LADDER) + 1):
+            out += [f"Set {n} done. Rest {int(REST_S)} seconds.", f"Set {n}. Start curling."]
         from .position import ADVICE
         out += [f"{a}." for a in ADVICE.values()] + ["Good position. Start curling.", "Start curling.",
                                                       "Good position. Here is how to do a bicep curl."]
@@ -155,6 +160,19 @@ class Coach:
         """The session ended without a counted rep, so it was not saved."""
         self.voice.say("No reps were counted, so this session was not saved.", SESSION, ttl=SESSION_TTL)
 
+    # ---------- Follow my goal: sets and rests (workout.py) ----------
+    def on_workout(self, kind, value, workout):
+        """kind/value: an event from GoalWorkout.update(). 'goal_done' is said with the session result."""
+        if kind == "arm_done":
+            other = "left" if value == "right" else "right"
+            self.voice.say(f"{value.capitalize()} arm done. Finish the {other} arm.", TIP, ttl=3.0)
+        elif kind == "set_done":
+            self.voice.say(f"Set {value} done. Rest {int(workout.rest_s)} seconds.", SESSION, ttl=6.0)
+        elif kind == "rest_warning":
+            self.voice.say("Ten seconds.", TIP, ttl=3.0)
+        elif kind == "rest_over":
+            self.voice.say(f"Set {value}. Start curling.", SESSION, ttl=4.0)
+
     def on_session_end(self, summary, plan=None):
         reps = int(summary.get("reps_total", 0) or 0)
         kcal = float(summary.get("calories_kcal", 0) or 0)
@@ -163,6 +181,13 @@ class Coach:
             parts.append("Less than 1 calorie burned." if kcal < 1 else
                          f"About {round(kcal)} calorie{'' if round(kcal) == 1 else 's'} burned.")
         plan = plan or {}
+        if summary.get("mode") == "goal" and summary.get("sets_done", 0) >= summary.get("goal_sets", 99):
+            parts.insert(0, "All sets done!")
+        if plan.get("mode") == "challenge":
+            if str(plan.get("headline", "")).startswith("New personal best"):
+                parts.append("New personal best!")
+            self.voice.say(" ".join(parts), SESSION, ttl=SESSION_TTL)
+            return
         if plan.get("met_goal"):
             parts.append("Goal reached!")
         g = plan.get("goal")

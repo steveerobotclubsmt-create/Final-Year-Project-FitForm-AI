@@ -19,7 +19,7 @@ FitForm AI runs MediaPipe Pose and Hands (pre-trained CNNs), its own fine-tuned 
 - Curl guide: an animated stick figure showing a correct curl and the key rules (fist facing the body), shown
   once the position check has passed - so the person is standing where they can see it - then "Start curling".
   Curls made during the guide are not counted (`--no-demo` skips it)
-- No keyboard needed: the window opens full screen, and a session ends when you walk away (5 s) or stop curling (30 s)
+- No keyboard needed: the window opens full screen, and a session ends when you walk away (5 s) or stop curling (30 s) - in **Follow my goal**, not during the rest between sets
 - Position check before the first rep: head, upper body and both hands in view, facing the camera, a sensible
   distance and roughly in the middle - a checklist on screen and one spoken instruction at a time ("Step back so
   your head is in view"). Curls only count once the position has been good for 1 s; during the session a
@@ -171,8 +171,16 @@ recordings from October are turned 180 degrees) - change `PICAM_ROTATE` / `WEBCA
 
 With nobody in front of it, the device shows a QR code with its address (e.g. `http://192.168.1.23:5000`).
 Scan it with a phone on the same Wi-Fi, log in or create an account, and tap **Train on this device**.
-A session ends by itself when you walk out of view for 5 s or stop curling for 30 s; the screen then shows
-the totals and your next goal, and everything is on the phone app.
+Then choose how to train:
+- **Follow my goal** (e.g. 3 sets x 8 per arm): the screen shows "Set 1 of 3  Left 5/8  Right 6/8". When both arms
+  have done the set, FitForm says "Set 1 done. Rest 60 seconds." and counts the rest down (ACSM 2009: 1-2 min for
+  exercises like curls). You may step out of view while resting; a curl ends the rest early. After the last set the
+  session is saved. Only these sessions move your goal up.
+- **Challenge yourself**: as many good curls as you can; saved 30 s after your last curl. It does not change your
+  goal, but can set a new personal best.
+
+Either way a session also ends when you walk out of view for 5 s or stop curling for 30 s (never during a rest);
+the screen then shows the totals and your next goal, and everything is on the phone app.
 On the touch screen, tap the **X** in the top-right corner twice to close FitForm (a running session is saved).
 
 Speaker for the spoken feedback: tap **Speaker** (top right, between sessions). Any Bluetooth speaker works -
