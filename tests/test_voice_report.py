@@ -617,6 +617,9 @@ def test_sets_and_rest_are_spoken():
     c.on_session_end({"reps_total": 48, "calories_kcal": 9.6, "mode": "goal", "sets_done": 3, "goal_sets": 3},
                      {"met_goal": True, "goal": {"sets": 3, "reps": 10}})
     assert said(v).startswith("All sets done! Session saved. 48 reps counted.")
+    c.on_session_end({"reps_total": 48, "calories_kcal": 16, "mode": "goal", "sets_done": 3, "goal_sets": 3,
+                      "form_accuracy_pct": 81.4}, {"met_goal": False, "goal": {"sets": 3, "reps": 8}})
+    assert "81 percent of your curls counted. 85 percent moves you up. Next goal: 3 sets of 8" in said(v)
     c.on_session_end({"reps_total": 50, "calories_kcal": 9.6, "mode": "challenge"},
                      {"mode": "challenge", "headline": "New personal best: 50 curls counted!",
                       "goal": {"sets": 3, "reps": 8}})

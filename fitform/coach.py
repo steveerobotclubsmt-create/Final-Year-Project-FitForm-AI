@@ -190,6 +190,11 @@ class Coach:
             return
         if plan.get("met_goal"):
             parts.append("Goal reached!")
+        elif summary.get("mode") == "goal" and summary.get("sets_done", 0) >= summary.get("goal_sets", 99):
+            # all sets done but too many curls not counted to move up (22 Nov: 'All sets done!' with no reason)
+            from .plan import GOOD_FORM
+            parts.append(f"{round(summary.get('form_accuracy_pct', 0))} percent of your curls counted. "
+                         f"{round(GOOD_FORM)} percent moves you up.")
         g = plan.get("goal")
         if g:
             parts.append(f"Next goal: {g['sets']} sets of {g['reps']} per arm.")

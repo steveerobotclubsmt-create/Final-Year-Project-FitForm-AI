@@ -344,8 +344,9 @@ def main():
                         coach.on_position_ok()
                 elif pos is not None and pos["problem"]:
                     coach.on_position(pos["problem"], pos["advice"])
-            elif gate and session_tag is not None:
+            elif gate and session_tag is not None and not (workout is not None and workout.resting):
                 drift_key = drift.update(pos, now)          # during a session: warn only, keep counting
+                                                            # (not while resting: walking off is fine then)
                 if drift_key:
                     coach.on_position_drift(drift_key, ADVICE[drift_key])
             positioned = gate is None or gate.passed or session_tag is not None
