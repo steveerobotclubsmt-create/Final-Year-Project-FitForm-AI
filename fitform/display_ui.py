@@ -90,9 +90,10 @@ def draw_debug(image, feedback):
 
 def draw_hud(image, feedback, calories_kcal, elapsed_s, fps):
     h, w = image.shape[:2]
+    # the picture is mirrored, so the person's right arm is on the right of the screen: its board goes there too
     for arm, x, label, label_color in (
-        ("right", 0, "RIGHT", YELLOW),
-        ("left", w - 180, "LEFT", (255, 100, 255)),
+        ("right", w - 180, "RIGHT", YELLOW),
+        ("left", 0, "LEFT", (255, 100, 255)),
     ):
         counter = feedback.counters[arm]
         cv2.rectangle(image, (x, 0), (x + 180, 170), (20, 20, 20), -1)

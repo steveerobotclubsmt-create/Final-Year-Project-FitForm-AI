@@ -231,6 +231,40 @@ def test_speaker_without_pin_and_cancelled_pin():
     assert sp2.got_pin is None and "Could not pair" in menu2.message
 
 
+def test_menu_closes_when_training_starts_but_not_while_pairing():
+    """22 Nov test: logged in on the phone while the speaker menu was still open on the Pi - training waited
+    until the user walked back to tap OK and Close."""
+    menu = SpeakerMenu(FakeSpeakers(), FakeVoice())
+    assert not menu.close_for_training()                       # already closed: nothing to do
+    for state in ("home", "result", "found"):
+        menu.open()
+        wait_home(menu)
+        menu.state = state
+        assert menu.close_for_training() and not menu.is_open
+    sp = FakeSpeakers(pin_needed="0000")
+    menu = SpeakerMenu(sp, FakeVoice())
+    menu.open()
+    wait_home(menu)
+    press(menu, "Find new speaker")
+    wait(menu, "found")
+    press(menu, "Anker")
+    wait(menu, "pin")                                           # waiting for a PIN: must stay open
+    assert not menu.close_for_training() and menu.state == "pin"
+    press(menu, "Cancel")
+    wait(menu, "result")
+
+
+def test_arm_boards_match_the_mirrored_picture():
+    """The picture is mirrored, so the RIGHT arm's board is on the right of the screen and LEFT on the left."""
+    from fitform.display_ui import draw_hud
+    from fitform.feedback_engine import FeedbackEngine
+    img = np.zeros((600, 800, 3), np.uint8)
+    draw_hud(img, FeedbackEngine(), 0.0, 0.0, 15.0)
+    yellow = (img[:, :, 0] < 50) & (img[:, :, 1] > 200) & (img[:, :, 2] > 200)       # the 'RIGHT' label
+    magenta = (img[:, :, 0] > 200) & (img[:, :, 1] < 150) & (img[:, :, 2] > 200)     # the 'LEFT' label
+    assert np.nonzero(yellow[:40])[1].min() > 600 and np.nonzero(magenta[:40])[1].max() < 200
+
+
 def test_test_sound_plays_on_the_chosen_speaker():
     voice = FakeVoice()
     menu = SpeakerMenu(FakeSpeakers(), voice)

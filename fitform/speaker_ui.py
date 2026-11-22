@@ -69,7 +69,7 @@ class SpeakerMenu:
         if self.state == "closed":
             self.open_rect = None
             if allowed:                                   # under the X, in the black bar beside the picture,
-                h, w = image.shape[:2]                    # so the LEFT arm panel is not covered
+                h, w = image.shape[:2]                    # so the RIGHT arm panel is not covered
                 s = self.BUTTON_SIZE
                 x0, y0 = w - 8 - s, 8 + s + 8
                 self.open_rect = (x0, y0, x0 + s, y0 + s)
@@ -91,6 +91,15 @@ class SpeakerMenu:
     def close(self):
         self.state = "closed"
         self.buttons = []
+
+    def close_for_training(self):
+        """Someone tapped 'Train on this device': close the menu, so training is not blocked by a menu left open
+        on the screen (22 Nov test: the user had to walk back to tap OK and Close). Not while connecting or
+        waiting for a PIN - that would break the pairing. Returns True if it closed the menu."""
+        if self.state in ("closed", "busy", "pin"):
+            return False
+        self.close()
+        return True
 
     @staticmethod
     def _speaker_icon(img, x0, y0, s):

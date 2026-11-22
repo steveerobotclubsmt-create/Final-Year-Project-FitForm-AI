@@ -138,6 +138,7 @@ def main():
     speakers = Speakers(config.LOG_DIR)
     speakers.restore()                          # reconnect the speaker chosen last time (in the background)
     speaker_menu = SpeakerMenu(speakers, voice)   # 'No speaker' chosen last time: the voice stays muted
+    last_device_user = None                       # who tapped 'Train on this device' (to notice a new login)
     if speakers.muted():
         print("Voice muted: 'No speaker (text only)' is chosen in the speaker settings")
     if voice.ready:
@@ -395,6 +396,10 @@ def main():
                 coach.on_frame(feedback.counters, drawn)
             if not tracker.active:
                 du = logger.device_user()
+                if du and du != last_device_user and speaker_menu.close_for_training():
+                    print("[SPEAKER] menu closed - training started on the phone")   # once per login: the
+                                                                                   # menu can be reopened
+                last_device_user = du
                 if du:
                     coach.on_login(du)                  # 'Hi <name>' once per 'Train on this device'
                 else:
