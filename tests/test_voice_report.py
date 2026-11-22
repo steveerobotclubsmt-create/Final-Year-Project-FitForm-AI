@@ -589,6 +589,7 @@ def test_phone_offers_goal_or_challenge():
         page = client.get("/start").get_data(as_text=True)
         assert "Follow my goal: 3 sets &times; 8 per arm" in page and "Challenge yourself" in page
         assert "60 seconds of rest" in page
+        assert "Wear fitted clothes" in page                 # loose clothes hide the elbows (22 Nov)
         client.post("/start", data={"kind": "dumbbell", "amount": "1", "mode": "goal"})
         assert log.device_user() == "steve" and log.device_mode() == "goal"
         assert "Saved after the last set" in client.get("/").get_data(as_text=True)

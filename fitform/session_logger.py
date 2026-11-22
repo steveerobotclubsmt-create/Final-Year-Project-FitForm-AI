@@ -376,6 +376,7 @@ EQUIP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>FitForm AI</title><style>{{ style|safe }}</style></head>
 <body><main><h1>What will you lift?</h1>
 <p class="muted">So your report and your next goal use the weight you really train with.</p>
+<p class="muted">Wear fitted clothes (e.g. a T-shirt or singlet) so FitForm can see your elbows.</p>
 {% if msg %}<p class="err">{{ msg }}</p>{% endif %}
 <form method="post" action="/start" class="card">
 {% for key, name in kinds %}<label class="choice"><input type="radio" name="kind" value="{{ key }}"{% if key == kind %} checked{% endif %} onchange="unit()"> {{ name }}</label>

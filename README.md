@@ -171,6 +171,9 @@ recordings from October are turned 180 degrees) - change `PICAM_ROTATE` / `WEBCA
 
 With nobody in front of it, the device shows a QR code with its address (e.g. `http://192.168.1.23:5000`).
 Scan it with a phone on the same Wi-Fi, log in or create an account, and tap **Train on this device**.
+Wear fitted clothes (e.g. a T-shirt or singlet): the camera finds the elbows from the outline of the arm, and a
+loose or oversized shirt hides them, so a raised or flared elbow is measured smaller and caught less strictly
+(22 Nov: elbows flared 31-59 deg in a singlet were all measured clearly).
 Then choose how to train:
 - **Follow my goal** (e.g. 3 sets x 8 per arm): the screen shows "Set 1 of 3  Left 5/8  Right 6/8". When both arms
   have done the set, FitForm says "Set 1 done. Rest 60 seconds." and counts the rest down (ACSM 2009: 1-2 min for
