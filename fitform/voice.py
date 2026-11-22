@@ -45,6 +45,7 @@ class Voice:
         self._running = False
         self._player = None               # current player process (stopped by close() / interrupt())
         self._interrupted = False
+        self._last_end = -1e9             # when the last sentence finished playing
         self._warned = set()
         self.spoken = []                  # everything said, oldest first (for tests and --debug)
         self._synth, self._play = synth, play
@@ -159,6 +160,9 @@ class Voice:
             self._speaking = item
         try:
             path = self._synth_item(item)
+            if path and self._synth == self._piper_synth and config.VOICE_CHIME and \
+                    time.monotonic() - self._last_end > config.VOICE_CHIME_AFTER_SECONDS and bluetooth_output():
+                path = self._chimed(path)                      # speaker quiet for a while: wake it first
             if path and self.clock() <= item.until + 0.5:     # (making a new sentence takes a moment)
                 self.spoken.append(item.text)
                 print(f'[VOICE] "{item.text}"')
@@ -166,6 +170,7 @@ class Voice:
         except Exception as e:                                 # a broken speaker must never stop the workout
             self._warn_once(type(e).__name__, f"[VOICE] could not speak ({e})")
         finally:
+            self._last_end = time.monotonic()
             with self._cond:
                 self._speaking = None
 
@@ -183,6 +188,16 @@ class Voice:
                       gap=0.25, lead_in=config.VOICE_LEAD_IN_SECONDS)
             os.replace(tmp, path)
         return path
+
+    @staticmethod
+    def _chimed(path):
+        """The sentence `path` with the chime before it (made once, kept next to it)."""
+        out = path[:-4] + "_chime.wav"
+        if not os.path.exists(out):
+            tmp = f"{out}.{threading.get_ident()}.tmp"
+            add_chime(path, tmp)
+            os.replace(tmp, out)
+        return out
 
     def _worker(self):
         _low_priority()
@@ -278,6 +293,42 @@ def add_lead_in(path, seconds):
     with wave.open(path, "wb") as w:
         w.setparams(params)
         w.writeframes(silence + frames)
+
+
+_bt = {"t": -1e9, "on": False}
+
+
+def bluetooth_output():
+    """True when the sound goes to a Bluetooth speaker (checked at most every 5 s). Only those need the chime: the
+    USB headset said every first word without it (22 Nov)."""
+    now = time.monotonic()
+    if now - _bt["t"] > 5.0:
+        _bt["t"] = now
+        try:
+            out = subprocess.run(["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"], capture_output=True, text=True,
+                                 timeout=2).stdout
+            _bt["on"] = "bluez" in out
+        except (OSError, subprocess.SubprocessError):
+            _bt["on"] = False
+    return _bt["on"]
+
+
+def add_chime(src, dst, level=0.15, seconds=0.3, gap=0.12):
+    """Writes WAV `src` to `dst` with a short soft chime before it (an 880 Hz tone fading out, then `gap` s of
+    silence). A Bluetooth speaker that has been quiet only wakes up properly on a clear sound - the MT swallowed the
+    first word otherwise (22 Nov: silence and a quiet hiss before the sentence did not help; this chime did)."""
+    import math
+    import struct
+    with wave.open(src, "rb") as r:
+        params, frames = r.getparams(), r.readframes(r.getnframes())
+    sr, ch = params.framerate, params.nchannels
+    n = int(sr * seconds)
+    tone = [math.sin(2 * math.pi * 880 * i / sr) * math.exp(-i / sr / 0.08) * level for i in range(n)]
+    tone += [0.0] * int(sr * gap)
+    pre = b"".join(struct.pack("<" + "h" * ch, *([int(v * 32767)] * ch)) for v in tone)
+    with wave.open(dst, "wb") as w:
+        w.setparams(params)
+        w.writeframes(pre + frames)
 
 
 def join_wavs(paths, out, gap=0.25, lead_in=0.0):

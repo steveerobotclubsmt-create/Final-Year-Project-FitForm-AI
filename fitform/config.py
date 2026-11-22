@@ -144,8 +144,12 @@ VOICE_MODEL = "models/voices/en_GB-cori-medium.onnx"   # downloaded once, see RE
 VOICE_CACHE_DIR = "~/.cache/fitform/voice"             # sentences are made once and kept here as WAV files
 VOICE_VOLUME = 1.0           # 1.0 = normal; the speaker's own volume is the main control
 VOICE_SPEED = 1.0            # > 1 speaks faster
-VOICE_LEAD_IN_SECONDS = 0.0  # silence before each sentence, so a Bluetooth speaker waking from power-saving does
-                             # not swallow the first word ('Right' / 'Left' were cut off, 22 Nov); set by test
+VOICE_LEAD_IN_SECONDS = 0.0  # silence before each sentence - tested 22 Nov on the MT speaker (0.2-0.6 s): it did
+                             # not stop the first word being cut off, so it stays 0; the chime below does
+VOICE_CHIME = True           # Bluetooth speakers only: a soft 'ding' before a sentence after a quiet moment. The MT
+                             # cut off the first word ('...ight, 5') after quiet: silence (0.2-0.6 s) or an inaudible
+                             # hiss before it did not help, a chime did (4 of 4 complete, 22 Nov speaker tests)
+VOICE_CHIME_AFTER_SECONDS = 1.0  # ... only when nothing was played for longer than this (no ding inside a quick run)
 VOICE_COUNT_REPS = True      # say the number after each counted rep
 VOICE_LIVE_WARNINGS = True   # say an arm fault during the lift (only the reliable arm checks, never the hand ones)
 VOICE_LIVE_HOLD_SECONDS = 0.4  # ... once it has lasted this long (one-frame blips are never spoken)
