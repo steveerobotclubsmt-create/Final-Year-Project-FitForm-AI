@@ -146,12 +146,11 @@ VOICE_VOLUME = 1.0           # 1.0 = normal; the speaker's own volume is the mai
 VOICE_SPEED = 1.0            # > 1 speaks faster
 VOICE_LEAD_IN_SECONDS = 0.0  # silence before each sentence - tested 22 Nov on the MT speaker (0.2-0.6 s): it did
                              # not stop the first word being cut off, so it stays 0; the chime below does
-VOICE_CHIME = True           # listed speakers only: a soft 'ding' before a sentence after a quiet moment. The MT
-                             # cut off the first word ('...ight, 5') after quiet: silence (0.2-0.6 s) or an inaudible
-                             # hiss before it did not help, a chime did (4 of 4 complete, 22 Nov speaker tests)
+VOICE_CHIME = True           # a soft 'ding' before a sentence after a quiet moment, on every speaker. The MT Bluetooth
+                             # speaker cut off the first word ('...ight, 5') after quiet: silence (0.2-0.6 s) or an
+                             # inaudible hiss before it did not help, a chime did (4 of 4 complete, 22 Nov). On the
+                             # G733 USB headset it does no harm (4 of 4 complete, just the ding), so one rule fits all
 VOICE_CHIME_AFTER_SECONDS = 1.0  # ... only when nothing was played for longer than this (no ding inside a quick run)
-VOICE_CHIME_SPEAKERS = ("MT",)   # speakers (name as in the speaker menu) tested to need it - speakers differ, so a new
-                                 # one is added only after tools/test_lead_in.py --chime-all shows it helps
 VOICE_COUNT_REPS = True      # say the number after each counted rep
 VOICE_LIVE_WARNINGS = True   # say an arm fault during the lift (only the reliable arm checks, never the hand ones)
 VOICE_LIVE_HOLD_SECONDS = 0.4  # ... once it has lasted this long (one-frame blips are never spoken)

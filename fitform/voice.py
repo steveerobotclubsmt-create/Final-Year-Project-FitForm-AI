@@ -161,7 +161,7 @@ class Voice:
         try:
             path = self._synth_item(item)
             if path and self._synth == self._piper_synth and config.VOICE_CHIME and \
-                    time.monotonic() - self._last_end > config.VOICE_CHIME_AFTER_SECONDS and chime_speaker():
+                    time.monotonic() - self._last_end > config.VOICE_CHIME_AFTER_SECONDS:
                 path = self._chimed(path)                      # speaker quiet for a while: wake it first
             if path and self.clock() <= item.until + 0.5:     # (making a new sentence takes a moment)
                 self.spoken.append(item.text)
@@ -293,33 +293,6 @@ def add_lead_in(path, seconds):
     with wave.open(path, "wb") as w:
         w.setparams(params)
         w.writeframes(silence + frames)
-
-
-_out = {"t": -1e9, "name": None}
-
-
-def output_name():
-    """Name of the speaker the sound goes to now, e.g. 'MT' (checked at most every 5 s), or None."""
-    now = time.monotonic()
-    if now - _out["t"] > 5.0:
-        _out["t"], _out["name"] = now, None
-        try:
-            out = subprocess.run(["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"], capture_output=True, text=True,
-                                 timeout=2).stdout
-        except (OSError, subprocess.SubprocessError):
-            out = ""
-        for line in out.splitlines():
-            line = line.strip().lstrip("* ")
-            if line.startswith("node.description"):
-                _out["name"] = line.split("=", 1)[1].strip().strip('"')
-    return _out["name"]
-
-
-def chime_speaker(name=None):
-    """True for a speaker listed in VOICE_CHIME_SPEAKERS - tested to need the chime. Speakers differ: the USB headset
-    said every first word without it (22 Nov), other Bluetooth speakers are untested."""
-    name = output_name() if name is None else name
-    return bool(name) and name.lower() in {s.lower() for s in config.VOICE_CHIME_SPEAKERS}
 
 
 def add_chime(src, dst, level=0.15, seconds=0.3, gap=0.12):
