@@ -63,6 +63,7 @@ WRIST_MOVE_MARGIN = 0.2      # wrist this far (in shoulder widths) from its bott
                              # (wrist height is used for the timing: from the front the forearm comes towards the
                              # camera and the 2D elbow angle only changes late in the lift, which read slow lifts
                              # as 'too fast'; the wrist's height rises steadily)
+WRIST_STILL = 0.03           # wrist moved less than this (shoulder widths) since the last frame = holding still
 STRAIGHT_CONFIRM_FRAMES = 2  # arm must read straight this many frames in a row (ignores one-frame angle jumps)
 FORESHORTEN_RATIO = 0.55     # forearm looks shorter than this share of the upper arm = pointing at the camera;
                              # those frames are not used to finish a rep (the 2D angle is unreliable then)

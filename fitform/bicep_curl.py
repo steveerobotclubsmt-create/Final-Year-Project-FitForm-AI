@@ -164,6 +164,7 @@ class BicepCurlCounter:
         self._start_tilt = None
         self._lift_palm = [0, 0]       # [good, bad] palm readings: down position + lower part of the lift
         self._bottom_h = None          # wrist height while the arm hangs straight
+        self._prev_wrist_h = None      # wrist height in the previous frame
         self._leave_t = None           # last time the wrist was at the bottom (start of the lift)
         self._pending = False          # good lift waiting for the lowering check
         self._top_h = None             # highest wrist height of the current top
@@ -273,16 +274,20 @@ class BicepCurlCounter:
             self._straight_since = None
 
         # wrist height: its level with the arm hanging straight, and whether it is there now
-        # Not while a lowering is being timed, and only slowly upwards: from the front the forearm points at the
-        # camera, so the 2D elbow angle already reads 'straight' (above REARM_ANGLE) while the wrist is still well
-        # above its real bottom. Those frames raised the bottom level, the arm was 'back at the bottom' early and
-        # the lowering measured short - 22 Nov clip: lowered in ~0.9 s, measured 0.52-0.71 s, close to 'too fast'.
+        # Not while a lowering is being timed, and upwards quickly only while the wrist is still: from the front
+        # the forearm points at the camera, so the 2D elbow angle already reads 'straight' (above REARM_ANGLE)
+        # while the wrist is still well above its real bottom (end of a lowering, start of a lift). Those frames
+        # raised the bottom level, the arm was 'back at the bottom' early and the lowering measured short - 22 Nov
+        # clip: lowered in ~0.9 s, measured 0.52-0.71 s, close to 'too fast'. A still wrist above the level (after
+        # leaning forward, say) moves it up quickly - only slowly, reps were counted ~1 s late (22 Nov, left 15).
         if wrist_h is not None and straight_raw and not self._pending:
             if self._bottom_h is None:
                 self._bottom_h = wrist_h
             else:
-                k = 0.2 if wrist_h <= self._bottom_h + config.WRIST_MOVE_MARGIN / 2 else 0.03
-                self._bottom_h += k * (wrist_h - self._bottom_h)
+                still = self._prev_wrist_h is not None and abs(wrist_h - self._prev_wrist_h) < config.WRIST_STILL
+                near = wrist_h <= self._bottom_h + config.WRIST_MOVE_MARGIN / 2
+                self._bottom_h += (0.2 if (near or still) else 0.03) * (wrist_h - self._bottom_h)
+        self._prev_wrist_h = wrist_h
         if wrist_h is not None and self._bottom_h is not None:
             at_bottom = wrist_h <= self._bottom_h + config.WRIST_MOVE_MARGIN
         else:

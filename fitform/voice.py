@@ -27,10 +27,10 @@ COUNT, TIP, REJECT, SESSION = 1, 2, 3, 4
 
 
 class _Item:
-    __slots__ = ("text", "prio", "key", "until")
+    __slots__ = ("text", "prio", "key", "until", "parts")
 
-    def __init__(self, text, prio, key, until):
-        self.text, self.prio, self.key, self.until = text, prio, key, until
+    def __init__(self, text, prio, key, until, parts=None):
+        self.text, self.prio, self.key, self.until, self.parts = text, prio, key, until, parts
 
 
 class Voice:
@@ -78,8 +78,9 @@ class Voice:
             self._start_thread(self._worker, "voice")
 
     # ---------- what the app calls ----------
-    def say(self, text, prio, key=None, cooldown=0.0, ttl=None):
-        """Queue `text`. Returns True if it was accepted (it can still be dropped later if it waits too long)."""
+    def say(self, text, prio, key=None, cooldown=0.0, ttl=None, parts=None):
+        """Queue `text`. Returns True if it was accepted (it can still be dropped later if it waits too long).
+        `parts`: ready-made sentences that together say `text` - joined instead of making a new sentence."""
         if not self.ready or not text or self.muted:
             return False
         now = self.clock()
@@ -89,7 +90,7 @@ class Voice:
             p = self._pending
             if p is not None and p.until >= now and p.prio > prio:
                 return False                    # something more important is already waiting
-            self._pending = _Item(text, prio, key, now + (ttl if ttl is not None else 1e9))
+            self._pending = _Item(text, prio, key, now + (ttl if ttl is not None else 1e9), parts)
             if key is not None:
                 self._last_said[key] = now
             self._cond.notify()
@@ -141,7 +142,7 @@ class Voice:
         with self._cond:
             self._speaking = item
         try:
-            path = self._synth(item.text)
+            path = self._synth_item(item)
             if path and self.clock() <= item.until + 0.5:     # (making a new sentence takes a moment)
                 self.spoken.append(item.text)
                 print(f'[VOICE] "{item.text}"')
@@ -151,6 +152,21 @@ class Voice:
         finally:
             with self._cond:
                 self._speaking = None
+
+    def _synth_item(self, item):
+        """WAV for the item. Several ready-made parts ('Right, 6' + 'Left, 5') are joined: making the whole sentence
+        new took longer than its time limit on a hot Pi, and both numbers were dropped (22 Nov)."""
+        if not item.parts or len(item.parts) < 2 or self._synth != self._piper_synth:
+            return self._synth(item.text)
+        h = hashlib.sha1(("|".join(item.parts) + f"|{config.VOICE_VOLUME}|{config.VOICE_SPEED}|"
+                          f"{config.VOICE_LEAD_IN_SECONDS}|joined").encode()).hexdigest()[:16]
+        path = os.path.join(self._cache, h + ".wav")
+        if not os.path.exists(path):
+            tmp = f"{path}.{threading.get_ident()}.tmp"
+            join_wavs([self._piper_synth(p, lead_in=0.0) for p in item.parts], tmp,
+                      gap=0.25, lead_in=config.VOICE_LEAD_IN_SECONDS)
+            os.replace(tmp, path)
+        return path
 
     def _worker(self):
         _low_priority()
@@ -245,6 +261,20 @@ def add_lead_in(path, seconds):
     with wave.open(path, "wb") as w:
         w.setparams(params)
         w.writeframes(silence + frames)
+
+
+def join_wavs(paths, out, gap=0.25, lead_in=0.0):
+    """Writes the WAV files `paths` one after another into `out`, with `gap` s of silence between them."""
+    params, chunks = None, []
+    for p in paths:
+        with wave.open(p, "rb") as r:
+            params = params or r.getparams()
+            chunks.append(r.readframes(r.getnframes()))
+    frame = params.sampwidth * params.nchannels
+    silence = lambda s: b"\x00" * (int(params.framerate * s) * frame)      # noqa: E731
+    with wave.open(out, "wb") as w:
+        w.setparams(params)
+        w.writeframes(silence(lead_in) + silence(gap).join(chunks))
 
 
 def _low_priority():

@@ -11,7 +11,8 @@ No repeats, no clashes:
   - a fix ('Keep your elbow by your side') is said at most once per VOICE_REPEAT_SECONDS; a rep rejected for
     the same reason again in that time just says 'Not counted.';
   - a live warning that was just said makes the rejection that follows it short as well;
-  - both arms finishing in the same frame become one sentence; rep numbers say which arm only while both are used;
+  - both arms finishing in the same frame become one sentence, joined from the ready-made ones (no waiting for
+    a new sentence to be made); every number and rejection says which arm (22 Nov: '1', '2' alone was unclear);
   - live warnings wait until nothing else is being said, and only during the lift."""
 
 import re
@@ -23,8 +24,9 @@ from .voice import COUNT, REJECT, SESSION, TIP
 
 SPOKEN_REASONS = ("arm_tilt", "arm_forward", "elbow", "fast", "slow", "drop", "not_lowered")
 LIVE_WARNINGS = (("arm_tilted", "arm_tilt"), ("arm_forward", "arm_forward"), ("elbow_swinging", "elbow"))
-BOTH_ARMS_SECONDS = 20.0     # the other arm finished a curl this recently = both arms in use: name the arm
-COUNT_TTL, TIP_TTL, REJECT_TTL, SESSION_TTL = 1.5, 1.0, 4.0, 20.0
+# a number may wait up to COUNT_TTL s (e.g. behind a 'Not counted' sentence of the other arm, ~2.5 s); a newer
+# number replaces it, so only the latest is ever said. Was 1.5 s: on 22 Nov such numbers were dropped
+COUNT_TTL, TIP_TTL, REJECT_TTL, SESSION_TTL = 3.0, 1.0, 4.0, 20.0
 POSITION_SAY_AFTER = 1.0     # a position instruction is said once it has been the main problem this long
 
 
@@ -39,7 +41,6 @@ class Coach:
         self.clock = clock
         self.greeted = None
         self._live_since = {}                       # (arm, reason) -> when the live fault started
-        self._last_event = {"right": -1e9, "left": -1e9}
         self._pos_said, self._pos_key, self._pos_since = set(), None, None   # position check before the start
         self._drift_said = set()                    # position warnings said in this session
 
@@ -50,7 +51,7 @@ class Coach:
         for arm in ("Right", "Left", "Both arms"):
             out += [f"{arm}. Not counted."] + [f"{arm}. Not counted. {FIX_TEXT[k]}." for k in SPOKEN_REASONS]
         for n in range(1, 31):
-            out += [str(n), f"Right, {n}", f"Left, {n}"]
+            out += [f"Right, {n}", f"Left, {n}"]
         from .position import ADVICE
         out += [f"{a}." for a in ADVICE.values()] + ["Good position. Start curling.", "Start curling.",
                                                       "Good position. Here is how to do a bicep curl."]
@@ -66,10 +67,6 @@ class Coach:
         """events: [(arm, 'counted' | 'rejected')] from this frame."""
         if not events:
             return
-        now = self.clock()
-        for arm, _ in events:
-            self._last_event[arm] = now
-        both = all(now - t <= BOTH_ARMS_SECONDS for t in self._last_event.values())
         rejected = [(arm, counters[arm]) for arm, ev in events if ev != "counted"]
         if rejected:                                # a rejection matters more than a number
             arm, c = rejected[0]
@@ -77,15 +74,14 @@ class Coach:
             text = "Not counted." + (f" {fix}." if fix else "")
             if len(rejected) > 1:                   # both arms curled together and both rejected
                 text = f"Both arms. {text}"
-            elif both:
+            else:
                 text = f"{arm.capitalize()}. {text}"
             self.voice.say(text, REJECT, key=("fix", c.reject_key) if fix else None, ttl=REJECT_TTL)
             return
         if not config.VOICE_COUNT_REPS:
             return
-        parts = [f"{arm.capitalize()}, {counters[arm].count}" if both else str(counters[arm].count)
-                 for arm, _ in events]
-        self.voice.say(", ".join(parts), COUNT, ttl=COUNT_TTL)
+        parts = [f"{arm.capitalize()}, {counters[arm].count}" for arm, _ in events]
+        self.voice.say(", ".join(parts), COUNT, ttl=COUNT_TTL, parts=parts)
 
     def on_frame(self, counters, seen_arms):
         """Live warning during the lift, once the arm fault has lasted VOICE_LIVE_HOLD_SECONDS."""

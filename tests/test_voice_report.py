@@ -160,13 +160,13 @@ def test_rejection_says_the_fix_once_then_only_not_counted():
     v = quiet_voice(clock)
     c = Coach(v, clock=clock)
     c.on_events([("right", "rejected")], counters(right=counter(reject_key="elbow")))
-    assert said(v) == "Not counted. Keep your elbow still at your side."
+    assert said(v) == "Right. Not counted. Keep your elbow still at your side."
     clock.t += 5
     c.on_events([("right", "rejected")], counters(right=counter(reject_key="elbow")))
-    assert said(v) == "Not counted."
+    assert said(v) == "Right. Not counted."
     clock.t += 21
     c.on_events([("right", "rejected")], counters(right=counter(reject_key="elbow")))
-    assert said(v) == "Not counted. Keep your elbow still at your side."
+    assert said(v) == "Right. Not counted. Keep your elbow still at your side."
 
 
 def test_unreliable_hand_reasons_are_never_spoken():
@@ -174,7 +174,7 @@ def test_unreliable_hand_reasons_are_never_spoken():
         clock = Clock()
         v = quiet_voice(clock)
         Coach(v, clock=clock).on_events([("left", "rejected")], counters(left=counter(reject_key=key)))
-        assert said(v) == "Not counted.", key
+        assert said(v) == "Left. Not counted.", key
 
 
 def test_tempo_reasons_are_spoken():
@@ -183,15 +183,16 @@ def test_tempo_reasons_are_spoken():
         clock = Clock()
         v = quiet_voice(clock)
         Coach(v, clock=clock).on_events([("right", "rejected")], counters(right=counter(reject_key=key)))
-        assert said(v) == f"Not counted. {fix}."
+        assert said(v) == f"Right. Not counted. {fix}."
 
 
-def test_rep_numbers_name_the_arm_only_when_both_arms_are_used():
+def test_rep_numbers_always_name_the_arm():
+    """22 Nov: with one arm in use only the number was said ('1', '2') - unclear which arm counted."""
     clock = Clock()
     v = quiet_voice(clock)
     c = Coach(v, clock=clock)
     c.on_events([("right", "counted")], counters(right=counter(count=1)))
-    assert said(v) == "1"
+    assert said(v) == "Right, 1"
     clock.t += 3
     c.on_events([("left", "counted")], counters(left=counter(count=1)))
     assert said(v) == "Left, 1"
@@ -200,7 +201,44 @@ def test_rep_numbers_name_the_arm_only_when_both_arms_are_used():
     assert said(v) == "Right, 2, Left, 2"                # one sentence, not two that clash
     clock.t += 25                                       # left arm not used for a while
     c.on_events([("right", "counted")], counters(right=counter(count=3)))
-    assert said(v) == "3"
+    assert said(v) == "Right, 3"
+
+
+def test_both_counts_are_joined_from_ready_made_sentences(tmp_dir=None):
+    """22 Nov: 'Right, 6, Left, 5' was made as a new sentence on a hot Pi, took longer than its time limit and
+    was never said. The two ready-made sentences are joined instead (a WAV join, no speech synthesis)."""
+    import tempfile
+    import wave
+    from fitform.voice import join_wavs
+    d = tempfile.mkdtemp()
+    paths = []
+    for i, n in enumerate((1000, 3000)):
+        p = os.path.join(d, f"{i}.wav")
+        with wave.open(p, "wb") as w:
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(1000)
+            w.writeframes(b"\x01\x00" * n)
+        paths.append(p)
+    out = os.path.join(d, "joined.wav")
+    join_wavs(paths, out, gap=0.25, lead_in=0.5)
+    with wave.open(out, "rb") as r:
+        assert r.getnframes() == 500 + 1000 + 250 + 3000
+    # the coach passes the ready-made parts along with the sentence
+    clock = Clock()
+    v = quiet_voice(clock)
+    Coach(v, clock=clock).on_events([("right", "counted"), ("left", "counted")],
+                                    counters(right=counter(count=6), left=counter(count=5)))
+    item = v.next_item()
+    assert item.text == "Right, 6, Left, 5" and item.parts == ["Right, 6", "Left, 5"]
+
+
+def test_a_number_waits_behind_the_other_arms_rejection():
+    """22 Nov: 'Right, 15' came while 'Left. Not counted. Lower the weight slowly.' (~2.5 s) was being said and
+    was dropped after 1.5 s. It may now wait up to 3 s."""
+    clock = Clock()
+    v = quiet_voice(clock)
+    Coach(v, clock=clock).on_events([("right", "counted")], counters(right=counter(count=15)))
+    clock.t += 2.5
+    assert said(v) == "Right, 15"
 
 
 def test_rejection_wins_over_a_count_in_the_same_frame():
@@ -249,7 +287,7 @@ def test_live_warning_needs_the_fault_to_last_and_is_said_once():
     assert said(v) is None                              # not repeated
     # ... and the rejection that follows does not say the same fix again
     c.on_events([("right", "rejected")], counters(right=counter(reject_key="arm_tilt")))
-    assert said(v) == "Not counted."
+    assert said(v) == "Right. Not counted."
 
 
 def test_live_warning_only_during_the_lift_and_never_for_the_hand():
