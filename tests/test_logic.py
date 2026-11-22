@@ -865,6 +865,22 @@ def test_dropping_the_arm_is_not_counted():
     config.MIN_DOWN_SECONDS = 0.0
 
 
+def test_lowering_not_cut_short_when_the_elbow_reads_straight_early():
+    """22 Nov (hand in front of the body): while lowering, the elbow already reads straight (> REARM_ANGLE) with
+    the wrist still well above its real bottom. Those frames must not raise the bottom level - otherwise the arm
+    is 'back at the bottom' too early and a controlled lowering is called 'lowered too fast'."""
+    config.MIN_DOWN_SECONDS = 0.5
+    c = BicepCurlCounter("right", alpha=1.0)
+    for t in (0.0, 0.1, 0.2, 0.3):
+        c.update(mh(170, -1.4), t)                # arm hanging, bottom learnt at -1.4
+    c.update(mh(30, 0.0), 1.0)                    # top
+    c.update(mh(35, 0.0), 1.5)                    # leaves the top just after this
+    for t, h in ((1.7, -0.5), (1.8, -0.9), (1.9, -1.0), (2.0, -1.05), (2.1, -1.1)):
+        assert c.update(mh(150, h), t) is None    # elbow 'straight', wrist still 0.3+ above the bottom
+    assert c.update(mh(165, -1.35), 2.3) == "counted" and abs(c.last_down_time - 0.8) < 1e-6
+    config.MIN_DOWN_SECONDS = 0.0
+
+
 def test_lowering_check_without_wrist_height_uses_the_elbow():
     config.MIN_DOWN_SECONDS = 0.6
     c = BicepCurlCounter("right", alpha=1.0)

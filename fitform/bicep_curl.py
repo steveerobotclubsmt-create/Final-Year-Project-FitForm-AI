@@ -273,8 +273,16 @@ class BicepCurlCounter:
             self._straight_since = None
 
         # wrist height: its level with the arm hanging straight, and whether it is there now
-        if wrist_h is not None and straight_raw:
-            self._bottom_h = wrist_h if self._bottom_h is None else 0.8 * self._bottom_h + 0.2 * wrist_h
+        # Not while a lowering is being timed, and only slowly upwards: from the front the forearm points at the
+        # camera, so the 2D elbow angle already reads 'straight' (above REARM_ANGLE) while the wrist is still well
+        # above its real bottom. Those frames raised the bottom level, the arm was 'back at the bottom' early and
+        # the lowering measured short - 22 Nov clip: lowered in ~0.9 s, measured 0.52-0.71 s, close to 'too fast'.
+        if wrist_h is not None and straight_raw and not self._pending:
+            if self._bottom_h is None:
+                self._bottom_h = wrist_h
+            else:
+                k = 0.2 if wrist_h <= self._bottom_h + config.WRIST_MOVE_MARGIN / 2 else 0.03
+                self._bottom_h += k * (wrist_h - self._bottom_h)
         if wrist_h is not None and self._bottom_h is not None:
             at_bottom = wrist_h <= self._bottom_h + config.WRIST_MOVE_MARGIN
         else:

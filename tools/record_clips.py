@@ -35,7 +35,7 @@ INSTRUCTIONS = {
     "fist": "EMPTY hands, CLENCHED fists. Normal curls, both arms.",
     "open": "EMPTY hands, OPEN or relaxed. Normal curls, both arms.",
     # timing with the hand coming to the middle (forearm towards the camera) - 22 Nov test
-    "middle": "MIDDLE, SLOW: hands come to the middle of your body. About 1 s up, 1-2 s down. Both arms.",
+    "middle": "MIDDLE, SLOW: curl the hand ACROSS to the middle of your chest, in front of your body (not beside the shoulder). Count 2 s up, 2 s down. Both arms.",
     "side": "SIDE, SLOW: normal curls beside your body. About 1 s up, 1-2 s down. Both arms.",
     "middledrop": "MIDDLE, DROP: hands to the middle, then DROP the weight down fast (the wrong way).",
     "dumbbells": "A DUMBBELL in EACH hand. Normal curls, both arms; turn the wrists a little now and then.",

@@ -54,6 +54,10 @@ MIN_DOWN_SECONDS = 0.50      # lowering (wrist leaves the top -> back at the bot
                              # 27 Oct clips: slow proper 0.63-1.49 s, swings 0.17-0.60 s, fast drops 0.30-0.48 s.
                              # 15 Nov dumbbell test (webcam, ~12 FPS = 0.08 s per frame): good reps lowered in
                              # 0.55-0.87 s and one in 0.54 s was rejected at 0.55 - lowered to 0.50 (user's choice)
+                             # 22 Nov: the bottom level no longer creeps up during the lowering (bicep_curl.py),
+                             # so lowering times read 0.07-0.4 s longer and closer to the truth. Frame-exact replay
+                             # at 15 FPS: proper/slow/middle curls 0.53-1.47 s, drops 0.33-0.47 s (all 13 caught)
+                             # - 0.50 still sits between them
                              # 0 = no lowering check (rep counted at the top)
 WRIST_MOVE_MARGIN = 0.2      # wrist this far (in shoulder widths) from its bottom / top level = it has left it
                              # (wrist height is used for the timing: from the front the forearm comes towards the
