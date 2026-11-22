@@ -31,8 +31,9 @@ from .calorie_tracker import kcal_from_met
 from .equipment import label, next_load_advice
 
 LADDER = [(3, 8), (3, 10), (3, 12)]     # (sets, reps per set) per arm
-GOOD_FORM = 85.0                         # % of curls counted to move up
-OK_FORM = 70.0                           # below this: form first
+GOOD_FORM = 50.0                         # % of curls counted to move up - only a bad session is held back: the
+                                         # rejected curls are already not counted (owner's choice, 22 Nov; was 85)
+OK_FORM = 50.0                           # below this: form first (was 70)
 SEC_PER_REP = 3.0                        # slow-moderate tempo: about 1 s up, 2 s down
 REST_S = 60.0                            # between sets (1-2 min recommended; lower end used)
 WEEKLY_SESSIONS = 2                      # WHO 2020: at least 2 days a week

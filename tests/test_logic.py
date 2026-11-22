@@ -786,8 +786,10 @@ def test_summary_and_goal():
     p = make_plan(s, [], 80)                              # 24 per arm >= 3x8 with 94 % counted -> step up
     assert p["met_goal"] and p["goal"]["reps"] == 10
     assert p["palm_warning"] and p["grip_warning"]
-    low = make_plan({**s, "form_accuracy_pct": 50.0}, [], 80)
-    assert not low["met_goal"] and low["goal"]["reps"] == 8
+    ok = make_plan({**s, "form_accuracy_pct": 50.0}, [], 80)    # 50 % counted is enough (owner's choice, 22 Nov)
+    assert ok["met_goal"] and ok["goal"]["reps"] == 10
+    low = make_plan({**s, "form_accuracy_pct": 45.0}, [], 80)   # a bad session does not move the goal
+    assert not low["met_goal"] and low["goal"]["reps"] == 8 and "clean reps" in low["headline"]
     # at 3x12: the first time 'repeat once more', the second time in a row 'add weight' and back to 3x8
     at12 = {**s, "reps_right": 36, "reps_left": 36, "reps_total": 72}
     rec12 = {"summary": at12, "plan": {"goal": goal_for(2, 80)}}

@@ -339,7 +339,7 @@ Each rule was checked against the source's own text (16 Nov 2026); the quotes be
 | kcal per minute = MET x 3.5 x body weight (kg) / 200 | "METS to Kcal/min = multiply METS x 3.5 x body weight in kg then divide by 200" | Compendium website, Unit Conversions |
 
 Notes, so nothing is claimed that the sources do not say:
-- The step up the ladder (3x8 -> 3x10 -> 3x12, a step when the goal is reached with at least 85 % of curls
+- The step up the ladder (3x8 -> 3x10 -> 3x12, a step when the goal is reached with at least 50 % of curls
   counted; a weight increase after 3x12 on two sessions in a row) is FitForm's adaptation of the 2009 rule.
 - The kcal formula is printed on the Compendium's website, not in the paper; the paper (section 2.5) says
   "Additional equations used to convert EE values are available on the Compendium website". The paper

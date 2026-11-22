@@ -149,7 +149,7 @@ def _advice(d):
         out.append(f"Only {acc:.0f} % of your curls counted. Use a lighter weight until most curls count, "
                    "then build up again.")
     elif acc >= GOOD_FORM:
-        out.append(f"Good form: {acc:.0f} % of your curls counted (the goal moves up from {GOOD_FORM:.0f} %).")
+        out.append(f"{acc:.0f} % of your curls counted (the goal can move up from {GOOD_FORM:.0f} %).")
     for key, n in d["reasons"][:2]:
         if key in FIX_TEXT:
             out.append(f"{FIX_TEXT[key]} - {n} curl{'s' if n != 1 else ''} were not counted because of "
@@ -225,7 +225,7 @@ def _chart(kind, sessions, width_cm=CHART_W_CM, height_cm=CHART_H_CM):
     else:                                                      # form: share of curls counted
         vals = [s["accuracy"] for s in sessions]
         ax.axhspan(GOOD_FORM, 100, color=GOOD, alpha=0.08, zorder=1)
-        ax.axhline(GOOD_FORM, color=GOOD, linestyle="--", linewidth=1.0, label=f"{GOOD_FORM:.0f} % = good form")
+        ax.axhline(GOOD_FORM, color=GOOD, linestyle="--", linewidth=1.0, label=f"{GOOD_FORM:.0f} % = goal can move up")
         ax.plot(x, vals, color=ACCENT, marker="o", markersize=3.5, linewidth=1.6, label="curls counted", zorder=3)
         ax.set_ylim(0, 105)
         ax.set_ylabel("% counted", fontsize=7, color=MUTED)
