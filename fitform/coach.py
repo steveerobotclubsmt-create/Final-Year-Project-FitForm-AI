@@ -52,6 +52,7 @@ class Coach:
             out += [f"{arm}. Not counted."] + [f"{arm}. Not counted. {FIX_TEXT[k]}." for k in SPOKEN_REASONS]
         for n in range(1, 31):
             out += [f"Right, {n}", f"Left, {n}"]
+        out += ["Saved. Closing.", "Closing."]
         out += ["Right arm done. Finish the left arm.", "Left arm done. Finish the right arm.", "Ten seconds.",
                 "All sets done!"]
         from .plan import LADDER, REST_S
@@ -172,6 +173,10 @@ class Coach:
             self.voice.say("Ten seconds.", TIP, ttl=3.0)
         elif kind == "rest_over":
             self.voice.say(f"Set {value}. Start curling.", SESSION, ttl=4.0)
+
+    def on_quit(self, saved):
+        """The app is closed with the X (or Q): short, so closing is not held up."""
+        self.voice.say("Saved. Closing." if saved else "Closing.", SESSION, ttl=4.0)
 
     def on_session_end(self, summary, plan=None):
         reps = int(summary.get("reps_total", 0) or 0)

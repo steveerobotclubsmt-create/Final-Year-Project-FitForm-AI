@@ -598,6 +598,33 @@ def test_phone_offers_goal_or_challenge():
         assert log.device_mode() == "challenge"          # nobody logged in
 
 
+def test_closing_says_saved_and_closing_and_waits_for_it():
+    """22 Nov: closing with the X saved the session, but the voice was switched off before anything was heard."""
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_quit(True)
+    assert said(v) == "Saved. Closing."
+    c.on_quit(False)
+    assert said(v) == "Closing."
+    assert "Saved. Closing." in c.phrases() and "Closing." in c.phrases()      # ready-made: said at once
+    import threading
+    import time as _t
+    played = []
+    live = Voice(synth=lambda text: text, play=lambda p: (_t.sleep(0.3), played.append(p)))
+    live.say("Saved. Closing.", SESSION, ttl=4)
+    t0 = _t.monotonic()
+    live.wait_idle(3.0)
+    assert played == ["Saved. Closing."] and _t.monotonic() - t0 < 2.0
+    live.say("stuck", SESSION)
+    live._speaking = object()                       # something that never finishes: the wait has a limit
+    t0 = _t.monotonic()
+    live.wait_idle(0.3)
+    assert _t.monotonic() - t0 < 1.0
+    live._speaking = None
+    live.close()
+
+
 def test_sets_and_rest_are_spoken():
     from fitform.workout import GoalWorkout
     clock = Clock()

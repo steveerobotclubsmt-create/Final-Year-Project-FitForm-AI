@@ -208,9 +208,10 @@ def main():
     except (AttributeError, cv2.error):
         qr = None
 
-    def end_session(end_time):
+    def end_session(end_time, quiet=False):
         """Session over: summary + goal for next time, saved to the user's account; device logs out.
-        Returns (summary, plan), or (None, None) when no rep was counted - that is not saved as a session."""
+        Returns (summary, plan), or (None, None) when no rep was counted - that is not saved as a session.
+        quiet: no spoken result (closing the app says just 'Saved. Closing.')."""
         nonlocal workout
         summary = build_summary(feedback, calories, end_time, snapshots=snaps, user=session_user,
                                 equipment=session_equipment)
@@ -222,7 +223,8 @@ def main():
             plan = make_plan(summary, logger.history(session_user or "guest"), calories.weight_kg)
             print_summary(summary, plan)
             logger.save(summary, plan)
-            coach.on_session_end(summary, plan)
+            if not quiet:
+                coach.on_session_end(summary, plan)
         else:
             summary = plan = None
             print(f"[SESSION] no rep was counted ({sum(c.attempted for c in feedback.counters.values())} curls, "
@@ -232,7 +234,8 @@ def main():
                     os.remove(os.path.join(logger.snap_dir, name))
                 except OSError:
                     pass
-            coach.on_session_empty()
+            if not quiet:
+                coach.on_session_empty()
         logger.clear_device_user()
         coach.on_logout()
         if gate:
@@ -280,6 +283,7 @@ def main():
                 exit_tapped[0] = True
         cv2.setMouseCallback(window, on_tap)
 
+    closing = False                             # closed with Q or the X (not Ctrl-C in the terminal)
     try:
         while not stream.finished:
             frame_id, frame = stream.read()
@@ -556,6 +560,10 @@ def main():
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q") or exit_tapped[0]:      # Q, or the X tapped twice: a running session is saved
                     print("Closed from the screen" if exit_tapped[0] else "Closed with Q")
+                    closing = True
+                    draw_banner(shown, "Saving and closing...", (0, 200, 255), y=shown.shape[0] // 2)
+                    cv2.imshow(window, shown)               # (the voice says it before the window goes)
+                    cv2.waitKey(1)
                     break
                 if key == ord("r"):
                     feedback.reset()
@@ -564,8 +572,12 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        saved = False
         if tracker.active:                         # program closed mid-session: still save it
-            end_session(tracker.last_activity or time.time())
+            saved = end_session(tracker.last_activity or time.time(), quiet=closing)[0] is not None
+        if closing:                                # Q / X: say it before closing (22 Nov: it was cut off unheard)
+            coach.on_quit(saved)
+            voice.wait_idle(config.QUIT_VOICE_WAIT_SECONDS)
         voice.close()
         if pool:
             pool.shutdown(wait=False)

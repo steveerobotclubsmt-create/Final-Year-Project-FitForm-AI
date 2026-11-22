@@ -101,6 +101,13 @@ class Voice:
         with self._cond:
             return self._speaking is not None or self._pending is not None
 
+    def wait_idle(self, timeout):
+        """Waits until nothing is being said or waiting (at most `timeout` s) - so a last sentence is heard
+        before the app closes."""
+        end = time.monotonic() + timeout
+        while self._running and self.busy() and time.monotonic() < end:
+            time.sleep(0.05)
+
     def said_recently(self, key, seconds):
         return self.clock() - self._last_said.get(key, -1e9) < seconds
 

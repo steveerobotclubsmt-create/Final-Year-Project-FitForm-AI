@@ -149,6 +149,7 @@ VOICE_LEAD_IN_SECONDS = 0.0  # silence before each sentence, so a Bluetooth spea
 VOICE_COUNT_REPS = True      # say the number after each counted rep
 VOICE_LIVE_WARNINGS = True   # say an arm fault during the lift (only the reliable arm checks, never the hand ones)
 VOICE_LIVE_HOLD_SECONDS = 0.4  # ... once it has lasted this long (one-frame blips are never spoken)
+QUIT_VOICE_WAIT_SECONDS = 4.0  # closing with the X / Q: wait at most this long for 'Saved. Closing.'
 VOICE_REPEAT_SECONDS = 20.0  # the same fix is said at most once in this time; after that just 'Not counted.'
 
 # ---- Calories ----
