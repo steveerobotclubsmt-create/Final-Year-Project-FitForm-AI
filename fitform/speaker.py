@@ -249,8 +249,9 @@ class Speakers:
             return None
         def run():
             ok, msg = target(*args)
-            print(f"[SPEAKER] {msg}" + ("" if ok else " Until then FitForm only shows text - the speaker can "
-                                                   "be chosen again with the speaker button (top right)."))
+            end = "" if msg.rstrip().endswith((".", "!", "?")) else "."
+            print(f"[SPEAKER] {msg}" + ("" if ok else f"{end} Until then FitForm only shows text - the speaker "
+                                                   "can be chosen again with the speaker button (top right)."))
         t = threading.Thread(target=run, daemon=True, name="speaker")
         t.start()
         return t

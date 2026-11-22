@@ -43,7 +43,8 @@ class Voice:
         self._speaking = None             # _Item being spoken now
         self._last_said = {}              # key -> time it was last said (or queued)
         self._running = False
-        self._player = None               # current player process (stopped by close())
+        self._player = None               # current player process (stopped by close() / interrupt())
+        self._interrupted = False
         self._warned = set()
         self.spoken = []                  # everything said, oldest first (for tests and --debug)
         self._synth, self._play = synth, play
@@ -100,6 +101,14 @@ class Voice:
         """True while something is being said or waiting to be said."""
         with self._cond:
             return self._speaking is not None or self._pending is not None
+
+    def interrupt(self):
+        """Stops the sentence being played now; a waiting one is said next. Closing with the X during the long
+        session result: 'Closing.' was never heard - the 4 s wait ran out first (22 Nov)."""
+        p = self._player
+        if p is not None and p.poll() is None:
+            self._interrupted = True
+            p.terminate()
 
     def wait_idle(self, timeout):
         """Waits until nothing is being said or waiting (at most `timeout` s) - so a last sentence is heard
@@ -245,7 +254,8 @@ class Voice:
         cmd = [exe, path] if exe else ["aplay", "-q", path]
         self._player = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         _, err = self._player.communicate(timeout=30)
-        if self._player.returncode not in (0, None) and self._running:
+        interrupted, self._interrupted = self._interrupted, False
+        if self._player.returncode not in (0, None) and self._running and not interrupted:
             self._warn_once("play", f"[VOICE] audio player failed - is a speaker connected? "
                                     f"({(err or b'').decode(errors='ignore').strip()[:120]})")
 

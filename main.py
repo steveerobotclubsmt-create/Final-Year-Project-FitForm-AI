@@ -430,7 +430,8 @@ def main():
             # spoken feedback - not during the start-up demo (curls then are not counted) or before logging in
             if logged_in and not demo_on:
                 coach.on_events(events, feedback.counters)
-                coach.on_frame(feedback.counters, drawn)
+                if positioned:                      # arm warnings only once the position check has passed
+                    coach.on_frame(feedback.counters, drawn)   # (22 Nov: one was said during the check)
             if not tracker.active:
                 du = logger.device_user()
                 if du and du != last_device_user and speaker_menu.close_for_training():
@@ -577,6 +578,7 @@ def main():
             saved = end_session(tracker.last_activity or time.time(), quiet=closing)[0] is not None
         if closing:                                # Q / X: say it before closing (22 Nov: it was cut off unheard)
             coach.on_quit(saved)
+            voice.interrupt()                      # a long sentence still playing (the session result) stops
             voice.wait_idle(config.QUIT_VOICE_WAIT_SECONDS)
         voice.close()
         if pool:

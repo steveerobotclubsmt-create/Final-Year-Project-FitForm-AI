@@ -625,6 +625,23 @@ def test_closing_says_saved_and_closing_and_waits_for_it():
     live.close()
 
 
+def test_closing_cuts_a_long_sentence_short():
+    """22 Nov: X tapped while the session result (~8 s) was playing - 'Closing.' never came. interrupt() stops
+    the sentence being played, without the 'audio player failed' warning."""
+    class FakePlayer:
+        returncode = None
+        def poll(self):
+            return self.returncode
+        def terminate(self):
+            self.returncode = -15
+    v = Voice(synth=lambda text: text, play=lambda p: None, start=False)
+    v._player = FakePlayer()
+    v.interrupt()
+    assert v._player.returncode == -15 and v._interrupted
+    v.interrupt()                                    # already stopped: nothing happens
+    assert v._player.returncode == -15
+
+
 def test_sets_and_rest_are_spoken():
     from fitform.workout import GoalWorkout
     clock = Clock()
