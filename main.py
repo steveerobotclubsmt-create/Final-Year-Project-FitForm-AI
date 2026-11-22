@@ -441,6 +441,7 @@ def main():
                     # 'Cancel' / log out on the phone (or the 10 minutes ran out) before a curl counted: back to
                     # the QR code, and the next person starts with the position check again
                     print(f"[LOGIN] {last_device_user} freed the device")
+                    coach.on_device_freed()
                     demo_on, demo_pending, go_until = False, False, 0.0
                     feedback.reset()
                     calories.reset()

@@ -662,6 +662,16 @@ def test_chime_before_a_sentence_after_quiet():
     assert config.VOICE_CHIME and config.VOICE_CHIME_AFTER_SECONDS == 1.0
 
 
+def test_freeing_the_device_is_said():
+    """23 Nov: after 'Cancel' or log out on the phone the Pi went back to the QR code without a word."""
+    clock = Clock()
+    v = quiet_voice(clock)
+    c = Coach(v, clock=clock)
+    c.on_device_freed()
+    assert said(v) == "Logged out. FitForm is free for the next person."
+    assert "Logged out. FitForm is free for the next person." in c.phrases()
+
+
 def test_sets_and_rest_are_spoken():
     from fitform.workout import GoalWorkout
     clock = Clock()

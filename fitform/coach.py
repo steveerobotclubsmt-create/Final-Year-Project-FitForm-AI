@@ -52,7 +52,7 @@ class Coach:
             out += [f"{arm}. Not counted."] + [f"{arm}. Not counted. {FIX_TEXT[k]}." for k in SPOKEN_REASONS]
         for n in range(1, 31):
             out += [f"Right, {n}", f"Left, {n}"]
-        out += ["Saved. Closing.", "Closing."]
+        out += ["Saved. Closing.", "Closing.", "Logged out. FitForm is free for the next person."]
         out += ["Right arm done. Finish the left arm.", "Left arm done. Finish the right arm.", "Ten seconds.",
                 "All sets done!"]
         from .plan import LADDER, REST_S
@@ -123,6 +123,11 @@ class Coach:
         self.greeted = name
         then = "Let's check your position." if config.POSITION_CHECK else "Hold your arms straight to start."
         self.voice.say(f"Hi {_spoken_name(name)}. {then}", SESSION, ttl=SESSION_TTL)
+
+    def on_device_freed(self):
+        """'Cancel' or log out on the phone (or the 10 minutes ran out) before training: said, so the person at the
+        device knows why the screen went back to the QR code (23 Nov)."""
+        self.voice.say("Logged out. FitForm is free for the next person.", SESSION, ttl=5.0)
 
     def on_logout(self):
         self.greeted = None
