@@ -351,6 +351,21 @@ class BicepCurlCounter:
         # Hint only: arm is being lowered but has not reached full extension yet.
         not_extended = self.stage == "up" and elbow < config.EXTENSION_MIN_ANGLE
 
+        # Top and lowering of a good lift: the upper arm must stay pointing down there too. These checks ran only
+        # during the lift, so on 22 Nov a rep with the elbows raised forward at the top was counted (left 14).
+        if self._pending and event is None:
+            bad = [k for k, on in (("elbow", elbow_swinging), ("arm_tilt", arm_tilted), ("arm_forward", arm_forward))
+                   if self._hold(k, on, now)]
+            if bad:
+                self._pending = False
+                self.form_ok = False
+                self.last_reasons = [REASON_TEXT[r] for r in REASON_ORDER if r in bad]
+                self.reject_key = next(r for r in REASON_ORDER if r in bad)
+                for r in bad:
+                    self.reject_counts[r] = self.reject_counts.get(r, 0) + 1
+                self.blocked_until = now + config.REJECT_PAUSE_SECONDS
+                event = "rejected"
+
         if straight and self.ready and now >= self.blocked_until and not self._pending:
             # Arm fully straight: every new attempt starts here with a clean slate, so a
             # half rep that went wrong does not carry its fault into the next proper rep.

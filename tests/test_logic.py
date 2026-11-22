@@ -136,6 +136,30 @@ def test_elbow_moving_forward_is_rejected():
     assert c.update(mm(30, 0.97), 3.0) == "counted"
 
 
+def test_elbow_raised_at_the_top_is_rejected():
+    """22 Nov live test (left 14): a proper lift, then the elbow raised forward at the top - the upper-arm checks
+    must keep running at the top and while lowering, not only during the lift."""
+    def mm(e, ratio, h):
+        d = mh(e, h)
+        d["shoulder_w"], d["upper_len"] = 100.0, 85.0 * ratio
+        return d
+    config.MIN_DOWN_SECONDS, config.FAULT_HOLD_SECONDS = 0.5, 0.3
+    c = BicepCurlCounter("right", alpha=1.0)
+    c.update(mm(170, 1.0, -1.4), 0.0)
+    c.update(mm(90, 0.97, -0.7), 0.5)
+    assert c.update(mm(30, 0.97, 0.0), 1.0) is None              # good lift: waits for the lowering
+    assert c.update(mm(30, 0.6, 0.1), 1.2) is None               # elbow comes forward at the top ...
+    assert c.update(mm(30, 0.6, 0.1), 1.6) == "rejected"         # ... and stays there longer than the hold time
+    assert c.last_reasons == ["elbow moved forward/back"] and c.count == 0
+    c.update(mm(170, 1.0, -1.4), 3.0)                            # a proper rep afterwards still counts
+    c.update(mm(90, 0.97, -0.7), 3.5)
+    c.update(mm(30, 0.97, 0.0), 4.0)
+    c.update(mm(30, 0.6, 0.1), 4.5)                              # a short blip at the top is ignored
+    c.update(mm(30, 0.97, 0.0), 4.7)
+    assert c.update(mm(170, 1.0, -1.4), 5.7) == "counted" and c.count == 1
+    config.MIN_DOWN_SECONDS, config.FAULT_HOLD_SECONDS = 0.0, 0.0
+
+
 def test_random_hand_turning_is_rejected():
     """Turning the hand back and forth during the lift: the side camera sees it (the front camera only
     judges the palm while the arm is straight)."""
