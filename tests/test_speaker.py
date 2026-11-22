@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 
+import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -229,6 +230,37 @@ def test_speaker_without_pin_and_cancelled_pin():
     press(menu2, "Cancel")
     wait(menu2, "result")
     assert sp2.got_pin is None and "Could not pair" in menu2.message
+
+
+def test_connect_messages_say_what_to_do():
+    """22 Nov: 'Could not connect to MT - is it on and close by?' was not understood."""
+    from fitform.speaker import Speakers
+    mac = "41:42:F2:BE:04:0C"
+    info_off = f"Device {mac} (public)\n\tName: MT\n\tPaired: yes\n\tConnected: no\n\tUUID: Audio Sink\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        off = Speakers(tmp, run=lambda cmd, t: "Failed to connect: org.bluez.Error.Failed" if "connect" in cmd
+                       else info_off)
+        ok, msg = off.connect(mac, "MT")
+        assert not ok and msg == ("MT did not answer. Switch the speaker on and keep it within a few metres of "
+                                  "FitForm, then try again.")
+        sinks = "Audio\n ├─ Sinks:\n │  *   71. MT                    [vol: 0.50]\n │\n ├─ Sources:\n"
+        on = Speakers(tmp, run=lambda cmd, t: "Device already connected" if "connect" in cmd
+                      else (sinks if cmd[0] == "wpctl" else info_off))
+        assert on.connect(mac, "MT") == (True, "MT was already connected.")
+
+
+def test_long_result_messages_wrap_and_keep_their_colour():
+    from fitform.speaker_ui import _wrap
+    msg = "MT did not answer. Switch the speaker on and keep it within a few metres of FitForm, then try again."
+    lines = _wrap(msg, 0.7, 752)
+    assert len(lines) >= 2 and " ".join(lines) == msg                     # whole words, nothing lost
+    for line in lines:
+        assert cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0][0] <= 752
+    menu = SpeakerMenu(FakeSpeakers(), FakeVoice())
+    menu._done(True, "MT was already connected.")
+    assert menu.ok and menu.state == "result"                              # good news: green, not red
+    menu._done(False, msg)
+    assert not menu.ok
 
 
 def test_menu_closes_when_training_starts_but_not_while_pairing():

@@ -20,6 +20,19 @@ BG, PANEL, BTN, BTN_ON, TEXT, MUTED, ORANGE, GREEN, RED = (
     (0, 200, 0), (60, 60, 220))
 
 
+def _wrap(text, scale, max_w, thick=2):
+    """Splits `text` into lines of whole words that fit `max_w` pixels at `scale`."""
+    lines, line = [], ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if line and cv2.getTextSize(trial, FONT, scale, thick)[0][0] > max_w:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    return lines + ([line] if line else [])
+
+
 def _text(img, text, x, y, scale=0.6, col=TEXT, thick=2, max_w=None):
     if max_w:
         (tw, _), _ = cv2.getTextSize(text, FONT, scale, thick)
@@ -36,6 +49,7 @@ class SpeakerMenu:
         self.buttons = []                # [(x0, y0, x1, y1, action, label)] of the screen shown last
         self.open_rect = None            # the [Speaker] button when the menu is closed
         self.message, self.busy_text = "", ""
+        self.ok = True                   # whether the result screen shows good news (green) or a problem (red)
         self.home = None                 # (current, [(label, action)]) - loaded in the background
         self.found = []
         self.pin = ""
@@ -178,9 +192,10 @@ class SpeakerMenu:
             self._button(img, x, y, kw, kh, k, act, BTN_ON if k == "OK" else BTN, 0.9)
 
     def _draw_result(self, img, w, h):
-        ok = self.message.startswith(("Connected", "Sound now", "No speaker", "Playing"))
         _text(img, "Speaker", 24, 44, 1.0, ORANGE)
-        _text(img, self.message, 24, 130, 0.75, GREEN if ok else (80, 80, 255), max_w=w - 48)
+        col = GREEN if self.ok else (80, 80, 255)
+        for i, line in enumerate(_wrap(self.message, 0.7, w - 48)):       # whole words, never shrunk unreadable
+            _text(img, line, 24, 110 + 38 * i, 0.7, col)
         self._button(img, 24, h - 70, w - 48, 56, "OK", self.open)
 
     # ---------- actions ----------
@@ -255,20 +270,20 @@ class SpeakerMenu:
         self.sp.use_none()
         if self.voice is not None:
             self.voice.muted = True
-        self.message, self.state = "No speaker - FitForm shows everything as text only.", "result"
+        self.message, self.state, self.ok = "No speaker - FitForm shows everything as text only.", "result", True
 
     def _done(self, ok, msg):
         if ok and self.voice is not None:
             self.voice.muted = False
-        self.message, self.state = msg, "result"
+        self.message, self.state, self.ok = msg, "result", ok
 
     def _test_sound(self):
         if self.voice is None or not self.voice.ready:
-            self.message = "The voice is off on this device (no voice model / Piper)."
+            self.message, self.ok = "The voice is off on this device (no voice model / Piper).", False
         elif self.voice.muted:
-            self.message = "Choose a speaker first - 'No speaker' is selected."
+            self.message, self.ok = "Choose a speaker first - 'No speaker' is selected.", False
         else:
             from .voice import SESSION
             self.voice.say("Hello, this is FitForm. Your speaker works.", SESSION, ttl=10)
-            self.message = "Playing a test sentence - can you hear it?"
+            self.message, self.ok = "Playing a test sentence - can you hear it?", True
         self.state = "result"

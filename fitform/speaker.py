@@ -143,18 +143,21 @@ class Speakers:
     def connect(self, mac, name=None, wait=10.0):
         """Connects an already paired speaker and makes it the voice's output. Returns (ok, message)."""
         out = self._run(["bluetoothctl", "connect", mac], 25)
-        if "Connection successful" not in out and "already connected" not in out.lower():
+        already = "already connected" in out.lower()
+        if "Connection successful" not in out and not already:
             info = parse_info(self._run(["bluetoothctl", "info", mac], 10))
             if not info["connected"]:
-                return False, f"Could not connect to {name or mac} - is it on and close by?"
+                return False, (f"{name or mac} did not answer. Switch the speaker on and keep it within a few "
+                               "metres of FitForm, then try again.")
         name = name or parse_info(self._run(["bluetoothctl", "info", mac], 10))["name"] or mac
         end = time.monotonic() + wait                   # its audio output appears a moment after connecting
         while not self.use_output(name):
             if time.monotonic() > end:
-                return False, f"{name} is connected but its sound output did not appear"
+                return False, (f"{name} is connected, but FitForm cannot play sound through it yet. Wait a "
+                               "few seconds and choose it again.")
             time.sleep(0.5)
         self._save(use="bluetooth", mac=mac, name=name)
-        return True, f"Connected to {name}"
+        return True, f"{name} was already connected." if already else f"Connected to {name}"
 
     def choose_output(self, name):
         """Another output (e.g. HDMI): make it the default and remember it."""
@@ -206,14 +209,19 @@ class Speakers:
                 if hit == "Enter PIN code":
                     pin = ask_pin()
                     if pin is None:
-                        return False, "Cancelled"
+                        return False, "Pairing cancelled."
                     send(pin)
                 elif hit == "(yes/no)":
                     send("yes")                         # 'confirm passkey' / 'authorize service'
                 elif hit == "not available":
-                    return False, f"{name} is no longer visible - put it in pairing mode and search again"
+                    return False, (f"{name} cannot be found any more. Put it in pairing mode (Bluetooth light "
+                                   "flashing) and search again.")
+                elif hit:
+                    return False, (f"Could not pair with {name}: the PIN was not accepted. Check the speaker's "
+                                   "manual and try again.")
                 else:
-                    return False, f"Could not pair with {name}" + (" (wrong PIN?)" if hit else " (no answer)")
+                    return False, (f"Could not pair with {name}: it did not answer. Put it in pairing mode "
+                                   "(Bluetooth light flashing) and try again.")
             send(f"trust {mac}")
             wait_for(["trust succeeded", "Changing"], 5)
         finally:
@@ -239,7 +247,11 @@ class Speakers:
             target, args = self.choose_output, (s["name"],)
         else:
             return None
-        t = threading.Thread(target=lambda: print(f"[SPEAKER] {target(*args)[1]}"), daemon=True, name="speaker")
+        def run():
+            ok, msg = target(*args)
+            print(f"[SPEAKER] {msg}" + ("" if ok else " Until then FitForm only shows text - the speaker can "
+                                                   "be chosen again with the speaker button (top right)."))
+        t = threading.Thread(target=run, daemon=True, name="speaker")
         t.start()
         return t
 
