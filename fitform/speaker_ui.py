@@ -6,6 +6,8 @@
     -> Searching (10 s, 'put your speaker in pairing mode') -> Found speakers (tap one to pair)
     -> PIN keypad - only if the speaker asks for a PIN (old speakers; usually 0000)
     -> Result ('Connected to ...' or why not) -> back to Speaker
+    [Forget speaker] -> your paired speakers (tap one) -> 'Forget <name>?' [Forget] [Back] -> Result
+    (a badly paired or unwanted speaker could only be removed from a terminal before, 23 Nov)
 Slow steps (search, pair, connect) run in a background thread so the screen keeps updating.
 The backend is speaker.Speakers; a fake one with the same methods is used in the tests."""
 
@@ -45,13 +47,15 @@ class SpeakerMenu:
 
     def __init__(self, speakers, voice=None):
         self.sp, self.voice = speakers, voice
-        self.state = "closed"            # closed, home, busy, found, pin, result
+        self.state = "closed"            # closed, home, busy, found, pin, result, forget, confirm
         self.buttons = []                # [(x0, y0, x1, y1, action, label)] of the screen shown last
         self.open_rect = None            # the [Speaker] button when the menu is closed
         self.message, self.busy_text = "", ""
         self.ok = True                   # whether the result screen shows good news (green) or a problem (red)
         self.home = None                 # (current, [(label, action)]) - loaded in the background
         self.found = []
+        self.paired = []                 # [(mac, name, connected)] - for 'Forget speaker'
+        self.target = None               # (mac, name) the user tapped on the 'Forget' list
         self.pin = ""
         self._pin_done = threading.Event()
         self._pin_value = None
@@ -148,11 +152,36 @@ class SpeakerMenu:
             for label, action, on in options[:5]:
                 self._button(img, 24, y, w - 48, 46, label, action, BTN_ON if on else BTN)
                 y += 54
-        bw = (w - 48 - 2 * 12) // 3
+        bw = (w - 48 - 3 * 12) // 4
         y = h - 70
-        self._button(img, 24, y, bw, 56, "Find new speaker", self._start_scan, (120, 70, 0))
-        self._button(img, 24 + bw + 12, y, bw, 56, "Test sound", self._test_sound)
-        self._button(img, 24 + 2 * (bw + 12), y, bw, 56, "Close", self.close)
+        for i, (label, action, col) in enumerate((("Find new speaker", self._start_scan, (120, 70, 0)),
+                                                  ("Forget speaker", self._show_forget, BTN),
+                                                  ("Test sound", self._test_sound, BTN),
+                                                  ("Close", self.close, BTN))):
+            self._button(img, 24 + i * (bw + 12), y, bw, 56, label, action, col)
+
+    def _draw_forget(self, img, w, h):
+        _text(img, "Forget a speaker", 24, 44, 1.0, ORANGE)
+        if not self.paired:
+            _text(img, "No speaker is paired with FitForm.", 24, 110, 0.7)
+        else:
+            _text(img, "Tap the speaker FitForm should forget:", 24, 84, 0.6)
+            y = 100
+            for mac, name, _ in self.paired[:5]:
+                self._button(img, 24, y, w - 48, 50, name, lambda m=mac, n=name: self._ask_forget(m, n))
+                y += 58
+        self._button(img, 24, h - 70, w - 48, 56, "Back", self.open)
+
+    def _draw_confirm(self, img, w, h):
+        _text(img, "Forget a speaker", 24, 44, 1.0, ORANGE)
+        name = self.target[1] if self.target else ""
+        text = (f"Forget {name}? FitForm will stop using it. To use it again, put it in pairing mode and tap "
+                "Find new speaker.")
+        for i, line in enumerate(_wrap(text, 0.7, w - 48)):
+            _text(img, line, 24, 110 + 38 * i, 0.7)
+        bw = (w - 48 - 12) // 2
+        self._button(img, 24, h - 70, bw, 56, "Forget", self._start_forget, RED)
+        self._button(img, 24 + bw + 12, h - 70, bw, 56, "Back", self._show_forget)
 
     def _draw_busy(self, img, w, h):
         _text(img, "Speaker", 24, 44, 1.0, ORANGE)
@@ -210,6 +239,7 @@ class SpeakerMenu:
         options = []
         try:
             paired = self.sp.paired_speakers()
+            self.paired = paired
             outs = self.sp.outputs()
             muted = self.sp.muted()
             for mac, name, connected in paired:
@@ -227,6 +257,25 @@ class SpeakerMenu:
         except Exception as e:                      # Bluetooth / PipeWire not answering: still usable
             options, current = [("No speaker (text only)", self._choose_none, False)], f"unknown ({e})"
         self.home = (current, options)
+
+    def _show_forget(self):
+        self.state = "forget"
+
+    def _ask_forget(self, mac, name):
+        self.target, self.state = (mac, name), "confirm"
+
+    def _start_forget(self):
+        mac, name = self.target
+        self._run(self._forget, f"Forgetting {name}...", mac, name)
+
+    def _forget(self, mac, name):
+        try:
+            self.sp.forget(mac)
+            self.paired = [p for p in self.paired if p[0] != mac]
+            self._done(True, f"{name} is forgotten. To use it again: put it in pairing mode and tap "
+                             "Find new speaker.")
+        except Exception as e:                      # Bluetooth not answering
+            self._done(False, f"Could not forget {name} ({e}). Try again in a moment.")
 
     def _start_scan(self):
         self._run(self._scan, "Turn your speaker on and put it in pairing mode\n"

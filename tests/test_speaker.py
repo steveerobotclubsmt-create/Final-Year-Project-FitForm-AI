@@ -128,6 +128,9 @@ class FakeSpeakers:
     def choose_output(self, name):
         return True, f"Sound now plays on {name}"
 
+    def forget(self, mac):
+        self.paired = [p for p in self.paired if p[0] != mac]
+
 
 SCREEN = (480, 800, 3)
 
@@ -284,6 +287,38 @@ def test_menu_closes_when_training_starts_but_not_while_pairing():
     assert not menu.close_for_training() and menu.state == "pin"
     press(menu, "Cancel")
     wait(menu, "result")
+
+
+def test_forget_a_speaker_from_the_screen():
+    """23 Nov: forgetting a paired speaker was only possible in a terminal ('bluetoothctl remove')."""
+    sp = FakeSpeakers()
+    menu = SpeakerMenu(sp, FakeVoice())
+    menu.open()
+    wait_home(menu)
+    press(menu, "Forget speaker")
+    assert menu.state == "forget"
+    press(menu, "JBL Flip 5")
+    assert menu.state == "confirm"
+    press(menu, "Back")                                   # changed my mind: nothing forgotten
+    assert menu.state == "forget" and sp.paired
+    press(menu, "JBL Flip 5")
+    press(menu, "Forget")
+    wait(menu, "result")
+    assert menu.ok and "JBL Flip 5 is forgotten" in menu.message and sp.paired == []
+    press(menu, "OK")
+    wait_home(menu)
+    press(menu, "Forget speaker")
+    show(menu)
+    assert [b[5] for b in menu.buttons] == ["Back"]       # nothing left to forget
+
+
+def test_forget_removes_the_pairing_and_the_remembered_speaker():
+    calls = []
+    with tempfile.TemporaryDirectory() as d:
+        sp = Speakers(log_dir=d, run=lambda cmd, t: calls.append(cmd) or "")
+        sp._save(use="bluetooth", mac="AA:BB", name="MT")
+        sp.forget("AA:BB")
+        assert ["bluetoothctl", "remove", "AA:BB"] in calls and sp.settings() == {"use": "auto"}
 
 
 def test_arm_boards_match_the_mirrored_picture():
