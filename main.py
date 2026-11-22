@@ -437,6 +437,15 @@ def main():
                 if du and du != last_device_user and speaker_menu.close_for_training():
                     print("[SPEAKER] menu closed - training started on the phone")   # once per login: the
                                                                                    # menu can be reopened
+                if login_required and last_device_user and not du:
+                    # 'Cancel' / log out on the phone (or the 10 minutes ran out) before a curl counted: back to
+                    # the QR code, and the next person starts with the position check again
+                    print(f"[LOGIN] {last_device_user} freed the device")
+                    demo_on, demo_pending, go_until = False, False, 0.0
+                    feedback.reset()
+                    calories.reset()
+                    if gate:
+                        gate.reset()
                 last_device_user = du
                 if du:
                     coach.on_login(du)                  # 'Hi <name>' once per 'Train on this device'
@@ -470,6 +479,7 @@ def main():
                 print(f"[SESSION] ended ({why})")
                 saved_summary, saved_plan = end_session(tracker.last_activity or now)
                 snaps, session_tag, session_user = [], None, None
+                last_device_user = None                 # (the session's end logged out: not a 'Cancel')
                 saved_until = now + config.SAVED_BANNER_SECONDS if saved_summary else 0.0   # nothing saved: no banner
                 demo_pending = demo_allowed and gate is None    # with the position check: after it passes again
                 gpio.beep()

@@ -691,6 +691,62 @@ def test_sets_and_rest_are_spoken():
     assert text.endswith("New personal best!") and "Next goal" not in text
 
 
+def test_cancel_and_log_out_free_the_device():
+    """23 Nov: after 'Train on this device' the device stayed reserved for 10 minutes - no way to undo it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        log.register("anna1", "secret2", 60)
+        c = create_app(log, secret_key="test").test_client()
+        c.post("/login", data={"username": "steve", "password": "secret1"})
+        c.post("/start", data={"kind": "dumbbell", "amount": "1", "mode": "goal"})
+        page = c.get("/").get_data(as_text=True)
+        assert log.device_user() == "steve" and 'action="/cancel"' in page and "Cancel" in page
+        r = c.post("/cancel")
+        assert log.device_user() is None and "device+is+free" in r.headers["Location"]
+        c.post("/start", data={"kind": "dumbbell", "amount": "1"})
+        c.get("/logout")                                   # logging out frees it too
+        assert log.device_user() is None
+        log.set_device_user("anna1")                       # someone else's reservation is left alone
+        c.post("/login", data={"username": "steve", "password": "secret1"})
+        c.post("/cancel")
+        c.get("/logout")
+        assert log.device_user() == "anna1"
+
+
+def test_delete_my_account_removes_all_its_data():
+    """23 Nov (PDPA): a user can delete their account and all its data from the phone."""
+    with tempfile.TemporaryDirectory() as tmp:
+        log = SessionLogger(tmp)
+        log.register("steve", "secret1", 80)
+        log.register("anna1", "secret2", 60)
+        os.makedirs(log.snap_dir)
+        for user in ("steve", "anna1"):
+            snap = f"x_{user}_right_palm_c1.jpg"
+            open(os.path.join(log.snap_dir, snap), "w").close()
+            log.save({"timestamp": "2026-11-22 10:00:00", "user": user, "reps_total": 5, "attempted_total": 6,
+                      "snapshots": [snap]}, {"goal": {"sets": 3, "reps": 8}})
+        os.makedirs(os.path.join(tmp, "reports"))
+        open(os.path.join(tmp, "reports", "steve_2026-11-01_2026-11-30.pdf"), "w").close()
+        c = create_app(log, secret_key="test").test_client()
+        c.post("/login", data={"username": "steve", "password": "secret1"})
+        assert "Delete my account" in c.get("/").get_data(as_text=True)
+        c.post("/delete", data={"password": "wrong", "confirm": "yes"})          # wrong password: nothing happens
+        c.post("/delete", data={"password": "secret1"})                          # box not ticked: nothing happens
+        assert "steve" in log._users() and len(log.history("steve")) == 1
+        r = c.post("/delete", data={"password": "secret1", "confirm": "yes"})
+        assert "deleted" in r.headers["Location"] and "Log in" in c.get("/").get_data(as_text=True)
+        assert "steve" not in log._users() and log.history("steve") == [] and not log.check_login("steve", "secret1")
+        assert [row["user"] for row in log.read_all()] == ["anna1"]
+        assert sorted(os.listdir(log.snap_dir)) == ["x_anna1_right_palm_c1.jpg"]
+        assert os.listdir(os.path.join(tmp, "reports")) == []
+        assert "anna1" in log._users() and len(log.history("anna1")) == 1      # other accounts untouched
+        backup = os.listdir(os.path.join(tmp, "backups"))
+        assert len(backup) == 1 and backup[0].startswith("deleted_steve_")
+        assert sorted(os.listdir(os.path.join(tmp, "backups", backup[0]))) == [
+            "sessions.csv", "sessions.jsonl", "users.json"]
+
+
 def test_phone_asks_what_will_be_lifted():
     with tempfile.TemporaryDirectory() as tmp:
         log = SessionLogger(tmp)

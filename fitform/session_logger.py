@@ -244,6 +244,73 @@ class SessionLogger:
     def clear_device_user(self):
         self._device_user = None
 
+    def release_device(self, name):
+        """'Cancel' on the phone, or logging out: the device is no longer reserved for `name` (another person's
+        reservation is left alone). A session that is already running keeps saving to `name`'s account - main.py
+        remembers its user when the first curl is counted. Returns True if it was reserved for `name`."""
+        if name and self.device_user() == name:
+            self._device_user = None
+            return True
+        return False
+
+    def delete_account(self, name, now=None):
+        """Deletes the account `name` and everything stored for it: the account (email, weight, password hash),
+        its sessions in sessions.jsonl and sessions.csv, its hand pictures and its PDF reports. The three data
+        files are copied to backups/deleted_<user>_<time>/ first, in case of a mistake. Returns True if the
+        account existed. (23 Nov: a user could not remove their data - PDPA)"""
+        import shutil
+        stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(now))
+        with self._lock:
+            users = self._users()
+            if name not in users:
+                return False
+            backup = os.path.join(self.dir, "backups", f"deleted_{name}_{stamp}")
+            os.makedirs(backup, exist_ok=True)
+            for p in (self.users_path, self.jsonl, self.path):
+                if os.path.exists(p):
+                    shutil.copy2(p, backup)
+            snaps = []
+            if os.path.exists(self.jsonl):
+                keep = []
+                with open(self.jsonl, encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            s = (json.loads(line).get("summary") or {})
+                        except ValueError:
+                            keep.append(line)
+                            continue
+                        if s.get("user") == name:
+                            snaps += s.get("snapshots") or []
+                        else:
+                            keep.append(line)
+                tmp = self.jsonl + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.writelines(keep)
+                os.replace(tmp, self.jsonl)
+            if os.path.exists(self.path):
+                rows = [r for r in self.read_all() if r.get("user") != name]
+                tmp = self.path + ".tmp"
+                with open(tmp, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(rows)
+                os.replace(tmp, self.path)
+            for snap in snaps:
+                try:
+                    os.remove(os.path.join(self.snap_dir, os.path.basename(snap)))
+                except OSError:
+                    pass
+            reports = os.path.join(self.dir, "reports")
+            if os.path.isdir(reports):
+                for f in os.listdir(reports):
+                    if f.startswith(name + "_") and f.endswith(".pdf"):
+                        os.remove(os.path.join(reports, f))
+            del users[name]
+            self._write_users(users)
+        if self.device_user() == name:
+            self._device_user = None
+        return True
+
     # ---------- sessions ----------
     def _upgrade_csv(self):
         """A CSV from an older version (different columns, e.g. no 'user') is rewritten with the current
@@ -405,6 +472,7 @@ DASH = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 {% if msg %}<p class="err">{{ msg }}</p>{% endif %}
 <div class="card">
 {% if device_user == user %}<p class="ok">This device is ready for you - stand in front of the camera and start.</p>
+<form method="post" action="/cancel"><button class="ghost" style="width:100%">Cancel - free the device for someone else</button></form>
 <p class="muted">{% if device_mode == 'goal' %}Follow my goal: {{ g.sets }} sets &times; {{ g.reps }} per arm, with rests in between. Saved after the last set.{% else %}Challenge yourself: saved 30 seconds after your last curl.{% endif %}</p>
 {% else %}<a class="btn" href="/start">Train on this device</a>
 {% if device_user %}<p class="muted">Someone else is about to train on this device.</p>{% endif %}{% endif %}
@@ -489,6 +557,13 @@ forgotten password cannot be reset from the phone.</p>{% endif %}
 <div class="card"><details><summary>Where do the goals come from?</summary><ul>
 {% for src in sources %}<li class="muted">{{ src }}</li>{% endfor %}
 <li class="muted">Calories and goals are estimates and general guidance, not professional or medical advice.</li></ul></details></div>
+<div class="card"><details><summary>Delete my account</summary>
+<p class="err">This deletes your account and all its data from this device: your sessions, goals, email, body weight
+and hand pictures. It cannot be undone.</p>
+<form method="post" action="/delete">
+<label class="choice"><input type="checkbox" name="confirm" value="yes" required> Yes, delete my account and all my data</label>
+<label>Your password (to confirm it is you)<input name="password" type="password" autocomplete="current-password" required></label>
+<button style="width:100%;background:#c62828">Delete my account</button></form></details></div>
 </main></body></html>"""
 
 
@@ -641,8 +716,28 @@ def create_app(logger, secret_key=None, mailer=None):
 
     @app.route("/logout")
     def logout():
+        logger.release_device(me())               # the device is not left reserved for 10 minutes
         session.pop("user", None)
         return redirect("/")
+
+    @app.route("/cancel", methods=["POST"])
+    def cancel():
+        """'Cancel' under 'This device is ready for you': frees the device for someone else."""
+        if logger.release_device(me()):
+            return redirect("/?msg=Cancelled+-+the+device+is+free+for+someone+else")
+        return redirect("/")
+
+    @app.route("/delete", methods=["POST"])
+    def delete():
+        """'Delete my account': asks for the password again, so a phone left logged in cannot do it."""
+        user = me()
+        if not user:
+            return redirect("/")
+        if request.form.get("confirm") != "yes" or not logger.check_login(user, request.form.get("password", "")):
+            return redirect("/?msg=Account+not+deleted:+wrong+password+or+the+box+was+not+ticked")
+        logger.delete_account(user)
+        session.pop("user", None)
+        return redirect("/?ok=Your+account+and+all+its+data+were+deleted")
 
     @app.route("/start", methods=["GET", "POST"])
     def start():
