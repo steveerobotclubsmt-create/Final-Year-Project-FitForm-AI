@@ -28,6 +28,29 @@ with timestamped logs, a screenshot every 2 s and the Pi's temperature. Limits f
 with one front camera, loose clothing makes the upper-arm checks more lenient, and the Pi reached 84-87 deg C
 without a cooler. Details: README, "Known limitations".
 
+### Live accuracy tests with the final version (one person, 0.5 kg dumbbells, AI Camera)
+
+Whether each curl was right or wrong is known from the person doing it (curls done wrong on purpose). The share
+FitForm shows on the phone ("curls counted") is the user's own result; the columns below are FitForm's accuracy.
+
+| Session | Curls made | Correct curls counted | Wrong curls rejected | Correct curls wrongly rejected |
+|---|---|---|---|---|
+| 23 Nov, only correct curls (20 per arm) | 40 | 40 of 40 | - | 0 |
+| 23 Nov, only wrong curls | 21 | - | 21 of 21 | - |
+| 22 Nov, mixed (Follow my goal, 3 sets of 10) | 68: 63 correct, 5 wrong | 60 of 63 | 5 of 5 | 3 |
+
+- The wrong curls were dropping the weight (lowered in 0.36 s), lifting too fast (0.23-0.35 s) and the upper arm
+  or elbow moving (out to the side or forward). **Fist and wrist faults were not included**: they are a known
+  limitation of one front camera (the hand checks are advice only, and a bent wrist is caught only when large).
+- The 3 correct curls wrongly rejected on 22 Nov were lowered in 0.48-0.49 s, one frame (about 0.07 s at 14 FPS)
+  under the 0.50 s limit. In the 23 Nov correct session the fastest lowering was 0.61 s, and real drops are
+  0.2-0.4 s, so only quick controlled lowerings near 0.5 s are affected.
+- Earlier, recorded on 15 Nov with the 15 Nov version: 24 of 26 correct curls counted; both rejections were rules
+  that were too strict, fixed on 16 Nov.
+- The supervisor (18 Nov) and a friend also tried FitForm; their sessions were not recorded.
+
+The logs, screenshots and Pi temperatures of these sessions stay on the device (they belong to a user account).
+
 Also added after these tests: Follow my goal (sets with a 60 s rest) or Challenge yourself; the voice names the
 arm, joins both arms' sentences and plays a chime so a Bluetooth speaker does not cut the first word; Cancel and
 Delete my account on the phone; Forget speaker on the touch screen.
