@@ -1,6 +1,7 @@
 """Joint-angle maths and the strict rep-counting state machine for one arm.
 
-Measurements per frame (from MediaPipe 3D world landmarks when available, otherwise 2D image points):
+Measurements per frame (from the 2D image points; with USE_3D_ANGLES = True from MediaPipe's 3D world landmarks
+instead - tested on the Pi on 20 Oct and not used: the 3D elbow angle was too compressed to count reps):
   elbow     - elbow flexion angle (180 = straight arm, small = fully curled)
   wrist     - wrist straightness, elbow-wrist-index angle (180 = straight)
   upper_vec - shoulder->elbow direction; the counter compares it with the direction recorded
