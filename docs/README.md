@@ -45,7 +45,7 @@ FitForm shows on the phone ("curls counted") is the user's own result; the colum
 - The 3 correct curls wrongly rejected on 22 Nov were lowered in 0.48-0.49 s, one frame (about 0.07 s at 14 FPS)
   under the 0.50 s limit. In the 23 Nov correct session the fastest lowering was 0.61 s, and real drops are
   0.2-0.4 s, so only quick controlled lowerings near 0.5 s are affected.
-- Earlier, 15 Nov (version of that day): in the screen-recorded sessions at 23:42 (0.5 kg dumbbells) and 23:47 (no
+- Earlier, 15 Nov (version of that day, USB webcam as the front camera): in the screen-recorded sessions at 23:42 (0.5 kg dumbbells) and 23:47 (no
   weight), 29 of 31 correct curls were counted; the 2 wrong rejections ('wrist bent' while fully curled, and 'too fast'
   with a 0.40 s lift on a 0.40 s limit) were rules that were too strict, fixed on 16 Nov. In the recorded session in
   between (23:45, 9 curls all wrong on purpose) the 3 arm faults were rejected, but the 6 curls with the fist turned
