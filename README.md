@@ -233,6 +233,11 @@ tested on round 4, a separate recording it never saw: **98.1 %** of 2900 picture
 hands 93.5-100 %; per rep, as the app decides, **97.9 %** of holding reps and **99.1 %** of empty-hand reps are
 right. On the bottle it is unchanged (99.9 %), and it is just as fast (6.5 ms vs 6.4 ms per hand).
 
+These test pictures were taken with the USB webcam. With the AI Camera in the final sessions (22-23 Nov, 0.5 kg
+dumbbells) the right hand was recognised as holding a weight on almost every curl, but most left-hand curls were
+marked "no weight" (18 of 20 on 23 Nov), probably because the dumbbell training pictures came from the USB webcam.
+As the check is advice only, the counts were not affected.
+
 In FitForm the model runs through OpenCV's DNN module (about 5 ms per hand), so `fitform_env` does not need
 PyTorch. The hands are classified every 3rd frame and each rep gets one vote: with at least 3 readings and
 60 % or more of them "empty", the rep is marked "no weight". This is advice only (`HOLD_REJECTS = False` in
@@ -379,16 +384,19 @@ Sources:
   round a bottle or dumbbell can look open. It is therefore advisory as well.
 - **Weight in the hand (CNN)** is trained on one person, one plastic bottle, one pair of 0.5 kg dumbbells and
   two rooms. Mistakes seen: motion-blurred open hands, a yellow pole in the background read as the (yellow)
-  bottle, and an empty hand next to a hand holding a dumbbell (93.5 % right). It is therefore advisory only.
-  Next step: other people, other weights and rooms.
+  bottle, and an empty hand next to a hand holding a dumbbell (93.5 % right). With the AI Camera, most left-hand
+  dumbbell curls were marked "no weight" (22-23 Nov): it needs dumbbell pictures taken with the AI Camera. It is
+  therefore advisory only. Next step: AI Camera pictures, other people, other weights and rooms.
 - Accounts are stored on each device; several devices sharing one account list would need a central server.
-- **Correct curls are counted reliably; wrong ones less so** - the arm checks (upper arm, elbow, tempo,
-  extension) catch bad reps well, the hand checks less consistently.
+- **Correct curls are counted reliably, and arm and tempo faults are caught well** (upper arm, elbow, tempo,
+  extension); hand faults (fist direction, grip, bent wrist) are caught less consistently.
 - Calories are an estimate (MET formula), not a measurement. The plan is general guidance, not coaching.
 - Frame rate on the Pi 5 is about 15 FPS with one camera (8-10 FPS with two cameras and the CNN), so very fast
   reps can be timed less accurately.
-- **Testing:** the author's own sessions were screen-recorded and checked; the supervisor and a volunteer also
-  tried the prototype, but their sessions were not recorded, so there is no exact accuracy figure for other people.
+- **Testing:** the author's own sessions were checked (15 Nov from a screen recording, 22-23 Nov from a timestamped
+  log and screenshots); the supervisor and a volunteer also tried the prototype, but their sessions were not
+  recorded (no video; the volunteer's account and session numbers stay on the device with his consent), so there
+  is no exact accuracy figure for other people.
 - **Spoken rep numbers can be skipped** in a fast run of reps (a number is dropped rather than said late). The
   screen always shows the count.
 - **Bent wrist** is hard to see with one front camera (the wrist bends towards the camera), so it is rarely

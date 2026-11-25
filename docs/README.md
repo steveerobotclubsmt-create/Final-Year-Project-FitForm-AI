@@ -48,8 +48,8 @@ FitForm shows on the phone ("curls counted") is the user's own result; the colum
 - Earlier, 15 Nov (version of that day, USB webcam as the front camera): in the screen-recorded sessions at 23:42 (0.5 kg dumbbells) and 23:47 (no
   weight), 29 of 31 correct curls were counted; the 2 wrong rejections ('wrist bent' while fully curled, and 'too fast'
   with a 0.40 s lift on a 0.40 s limit) were rules that were too strict, fixed on 16 Nov. In the recorded session in
-  between (23:45, 9 curls all wrong on purpose) the 3 arm faults were rejected, but the 6 curls with the fist turned
-  upward were counted, because fist direction gives advice only (a known limitation). A dumbbell session that day at 20:43 (26 curls, 24 counted,
+  between (23:45, 9 curls all wrong on purpose) the 3 arm faults were rejected, but the 6 curls with the fist facing
+  down, then turned outward during the lift, were counted, because fist direction gives advice only (a known limitation). A dumbbell session that day at 20:43 (26 curls, 24 counted,
   both rejections 'lowered too fast' on the right arm) showed the first weight model marking all 26 curls 'no weight'.
 - The supervisor (18 Nov) and a friend also tried FitForm; their sessions were not recorded.
 
@@ -116,6 +116,11 @@ touch display and spoken feedback through a Bluetooth speaker (paired from the t
 ![Figure 1 - Updated hardware block diagram](figures/Figure%201%20-%20Updated%20hardware%20block%20diagram.png)
 
 ## Weight-in-hand CNN results (15 Nov 2026)
+
+Tested on USB webcam pictures (round 4): 98.1 % right. With the AI Camera in the final sessions (22-23 Nov) the
+right hand was recognised as holding the dumbbell on almost every curl, but most left-hand curls were marked
+"no weight" (18 of 20 on 23 Nov); the model needs dumbbell pictures from the AI Camera. It is advice only, so the
+counts were not affected.
 
 ![Figure 3 - Weight-in-hand CNN](figures/Figure%203%20-%20Weight-in-hand%20CNN%2C%20bottle-only%20model%20against%20the%20retrained%20model.png)
 
