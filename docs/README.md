@@ -119,8 +119,8 @@ touch display and spoken feedback through a Bluetooth speaker (paired from the t
 
 Tested on USB webcam pictures (round 4): 98.1 % right. With the AI Camera in the final sessions (22-23 Nov) the
 right hand was recognised as holding the dumbbell on almost every curl, but most left-hand curls were marked
-"no weight" (18 of 20 on 23 Nov), probably because the dumbbell pictures came from the USB webcam and, on the
-left side, the black dumbbell was in front of dark bedding; the model needs dumbbell pictures from the AI Camera. It is advice only, so the
+"no weight" (18 of 20 on 23 Nov), probably because, on the left side, the black dumbbell was in front of dark bedding of a
+similar colour; the model needs training pictures against dark backgrounds. It is advice only, so the
 counts were not affected.
 
 ![Figure 3 - Weight-in-hand CNN](figures/Figure%203%20-%20Weight-in-hand%20CNN%2C%20bottle-only%20model%20against%20the%20retrained%20model.png)

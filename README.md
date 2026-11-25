@@ -235,8 +235,8 @@ right. On the bottle it is unchanged (99.9 %), and it is just as fast (6.5 ms vs
 
 These test pictures were taken with the USB webcam. With the AI Camera in the final sessions (22-23 Nov, 0.5 kg
 dumbbells) the right hand was recognised as holding a weight on almost every curl, but most left-hand curls were
-marked "no weight" (18 of 20 on 23 Nov), probably because the dumbbell training pictures came from the USB webcam and because,
-on the left side of the picture, the black dumbbell was in front of dark bedding.
+marked "no weight" (18 of 20 on 23 Nov), probably because, on the left side of the picture, the black dumbbell was in front of dark
+bedding of a similar colour (all the dumbbell training pictures had a light wall behind them).
 As the check is advice only, the counts were not affected.
 
 In FitForm the model runs through OpenCV's DNN module (about 5 ms per hand), so `fitform_env` does not need
@@ -386,8 +386,8 @@ Sources:
 - **Weight in the hand (CNN)** is trained on one person, one plastic bottle, one pair of 0.5 kg dumbbells and
   two rooms. Mistakes seen: motion-blurred open hands, a yellow pole in the background read as the (yellow)
   bottle, and an empty hand next to a hand holding a dumbbell (93.5 % right). With the AI Camera, most left-hand
-  dumbbell curls were marked "no weight" (22-23 Nov): it needs dumbbell pictures taken with the AI Camera, also against dark backgrounds. It is
-  therefore advisory only. Next step: AI Camera pictures, other people, other weights and rooms.
+  dumbbell curls were marked "no weight" (22-23 Nov): probably because the black dumbbell was in front of dark bedding: it needs training pictures against dark backgrounds. It is
+  therefore advisory only. Next step: pictures against dark backgrounds, other people, other weights and rooms.
 - Accounts are stored on each device; several devices sharing one account list would need a central server.
 - **Correct curls are counted reliably, and arm and tempo faults are caught well** (upper arm, elbow, tempo,
   extension); hand faults (fist direction, grip, bent wrist) are caught less consistently.
