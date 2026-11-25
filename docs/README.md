@@ -55,16 +55,18 @@ Also added after these tests: Follow my goal (sets with a 60 s rest) or Challeng
 arm, joins both arms' sentences and plays a chime so a Bluetooth speaker does not cut the first word; Cancel and
 Delete my account on the phone; Forget speaker on the touch screen.
 
-## Latest Gantt chart (19 Nov 2026, after Session 4)
+## Latest Gantt chart (25 Nov 2026, report finalised)
 
-Status up to 19 Nov and the plan to the report (25 Nov) and the VIVA (2 Dec 2026). The Excel file also has an
-"Outline vs Actual" sheet comparing it with the Project Outline plan and explaining each change.
+Final status at the report submission (25 Nov) and the plan to the VIVA (2 Dec 2026). This is Figure A-1 in the
+Final Report. The Excel file also has an "Outline vs Actual" sheet comparing it with the Project Outline plan and
+explaining each change.
 
-- Excel: [FitForm_AI_Gantt_Chart_Daily_v8.xlsx](gantt/FitForm_AI_Gantt_Chart_Daily_v8.xlsx)
-- PDF: [FitForm_AI_Gantt_Chart_Daily_v8.pdf](gantt/FitForm_AI_Gantt_Chart_Daily_v8.pdf)
-- Previous version (31 Oct, after Session 3): [v7 Excel](gantt/FitForm_AI_Gantt_Chart_Daily_v7.xlsx), [v7 PDF](gantt/FitForm_AI_Gantt_Chart_Daily_v7.pdf)
+- Excel: [FitForm_AI_Gantt_Chart_Daily_v10.xlsx](gantt/FitForm_AI_Gantt_Chart_Daily_v10.xlsx)
+- PDF: [FitForm_AI_Gantt_Chart_Daily_v10.pdf](gantt/FitForm_AI_Gantt_Chart_Daily_v10.pdf)
+- Previous versions: 19 Nov, after Session 4 ([v8 Excel](gantt/FitForm_AI_Gantt_Chart_Daily_v8.xlsx), [v8 PDF](gantt/FitForm_AI_Gantt_Chart_Daily_v8.pdf));
+  31 Oct, after Session 3 ([v7 Excel](gantt/FitForm_AI_Gantt_Chart_Daily_v7.xlsx), [v7 PDF](gantt/FitForm_AI_Gantt_Chart_Daily_v7.pdf))
 
-![Gantt chart 19 Nov 2026](gantt/Gantt_chart_19_Nov_2026.png)
+![Gantt chart 25 Nov 2026](gantt/Gantt_chart_25_Nov_2026.png)
 
 ## Finished device (19 Nov 2026)
 
